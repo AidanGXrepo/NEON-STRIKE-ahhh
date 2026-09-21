@@ -1,0 +1,3565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neon Strike — FPS</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #87CEEB; font-family: 'Segoe UI', system-ui, sans-serif; }
+  #game { position: fixed; inset: 0; display: block; }
+
+  #hud { position: fixed; inset: 0; pointer-events: none; user-select: none; color: #fff; }
+  #crosshair { position: absolute; top: 50%; left: 50%; width: 0; height: 0; }
+  .ch-line { position: absolute; background: #fff; box-shadow: 0 0 4px #000; }
+  .ch-dot { position: absolute; width: 3px; height: 3px; background: #fff; border-radius: 50%; transform: translate(-50%, -50%); }
+  /* Shotgun reticle: an open ring whose diameter tracks the real pellet-spread cone
+     (same accuracy model as every other weapon), plus a short-lived scatter of dots
+     showing exactly where that shot's pellets flew. */
+  .ch-ring { position: absolute; top: 50%; left: 50%; border: 1.5px solid rgba(255,255,255,.88); border-radius: 50%; box-shadow: 0 0 4px #000, inset 0 0 3px rgba(0,0,0,.6); transform: translate(-50%,-50%); display: none; }
+  .ch-pellet { position: absolute; top: 50%; left: 50%; width: 3px; height: 3px; margin: -1.5px 0 0 -1.5px; background: #ffcc33; border-radius: 50%; box-shadow: 0 0 4px #000; opacity: 0; transition: opacity .18s linear; }
+
+  #topbar { position: absolute; top: 16px; left: 16px; right: 16px; display: flex; justify-content: space-between; font-size: 20px; text-shadow: 0 0 6px #000; }
+  #weapon { color: #fff; } #ammo { color: #fff; }
+
+  #bottomright { position: absolute; bottom: 16px; right: 16px; text-align: right; font-size: 14px; color: #fff; text-shadow: 0 0 6px #000; line-height: 1.5; }
+
+  #healthWrap { position: absolute; bottom: 16px; left: 16px; width: 220px; }
+  #killFeed { position: absolute; top: 52px; right: 16px; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; font-size: 13px; text-shadow: 0 0 6px #000; }
+  .kfRow { background: rgba(0,0,0,.35); border-radius: 5px; padding: 3px 9px; letter-spacing: .5px; }
+  #healthBarBg { width: 100%; height: 14px; background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.4); border-radius: 4px; overflow: hidden; }
+  #healthBarFg { height: 100%; width: 100%; background: linear-gradient(90deg, #ff4d4d, #ff8a80); }
+  #healthText { font-size: 13px; margin-top: 4px; color: #fff; text-shadow: 0 0 6px #000; }
+
+  /* Sniper scope overlay */
+  #scope { position: absolute; inset: 0; display: none; pointer-events: none; }
+  #scope .mask { position: absolute; inset: 0; background: radial-gradient(circle at center, transparent 0 30%, rgba(0,0,0,0.97) 30.5%); }
+  #scope .hline { position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: rgba(0,0,0,0.7); }
+  #scope .vline { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: rgba(0,0,0,0.7); }
+  #scope .dot { position: absolute; top: 50%; left: 50%; width: 5px; height: 5px; background: #000; border-radius: 50%; transform: translate(-50%,-50%); }
+
+  #overlay, #pauseMenu { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; text-align: center; background: radial-gradient(circle at center, rgba(30,60,90,.85), rgba(10,20,30,.96)); color: #fff; pointer-events: auto; }
+  /* Main menu sits on top of the LIVE aerial view of the game world, so it must stay see-through. */
+  #overlay { background: radial-gradient(circle at center, rgba(8,18,30,.20) 0%, rgba(5,12,22,.55) 70%, rgba(3,8,16,.78) 100%); }
+  #overlay > * { position: relative; z-index: 1; }
+  #menuPanel { background: rgba(6,12,22,.52); border: 1px solid rgba(255,255,255,.14); border-radius: 14px; padding: 26px 34px; backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); display: flex; flex-direction: column; align-items: center; gap: 18px; max-width: 680px; }
+  #menuRoot, #mapPanel { display: flex; flex-direction: column; align-items: center; gap: 14px; width: 100%; }
+  #menuRoot p { width: 70%; text-align: left; }
+  #nameField { display: flex; align-items: center; gap: 12px; width: 70%; color: #cfe0f2; font-size: 13px; letter-spacing: 2px; }
+  #playerNameInput { flex: 1; min-width: 0; max-width: none; text-align: left; }
+  #mapPanel { display: none; }
+  #menuRoot .btn { min-width: 260px; }
+  #mapMeta { font-size: 14px; color: #cfe0f2; letter-spacing: 1px; text-shadow: 0 1px 6px rgba(0,0,0,.95); }
+  #mapMeta b { color: #ffcc33; letter-spacing: 2px; }
+  #hostNotice { display: none; max-width: 460px; font-size: 13px; line-height: 1.5; color: #ffd9a0; background: rgba(60,36,8,.55); border: 1px solid rgba(255,204,51,.4); border-radius: 8px; padding: 10px 14px; }
+  #mapPanel h2 { font-size: 22px; letter-spacing: 3px; color: #fff; text-shadow: 0 1px 10px #000; }
+  #mapList { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 460px; }
+  .mapCard { cursor: pointer; text-align: left; padding: 12px 16px; border-radius: 10px; color: #fff; background: rgba(20,32,48,.62); border: 1px solid rgba(255,255,255,.16); transition: transform .1s, border-color .1s, background .1s; font-family: inherit; }
+  .mapCard:hover { transform: translateX(3px); background: rgba(30,48,70,.72); }
+  .mapCard.sel { border-color: #ffcc33; background: rgba(60,50,18,.62); box-shadow: 0 0 16px rgba(255,204,51,.28); }
+  .mapCardName { font-size: 17px; font-weight: 700; letter-spacing: 2px; }
+  .mapCard.sel .mapCardName::after { content: ' ✓'; color: #ffcc33; }
+  .mapCardBlurb { font-size: 12.5px; color: #c3d2e2; margin-top: 3px; line-height: 1.45; }
+  .mapCard[disabled] { opacity: .5; cursor: not-allowed; }
+
+  /* ---- Game settings (mode + score/time limits), same furniture as map cards ---- */
+  #settingsPanel { display: none; flex-direction: column; align-items: center; gap: 16px; width: 100%; max-height: 80vh; overflow-y: auto; }
+  #settingsPanel h2 { font-size: 22px; letter-spacing: 3px; color: #fff; text-shadow: 0 1px 10px #000; }
+  .settingsGroup { display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 460px; }
+  .settingsLabel { font-size: 11px; letter-spacing: 2px; color: #9fb3c8; text-align: left; }
+  .modeList { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 460px; }
+  .modeCard { cursor: pointer; text-align: left; padding: 12px 16px; border-radius: 10px; color: #fff; background: rgba(20,32,48,.62); border: 1px solid rgba(255,255,255,.16); transition: transform .1s, border-color .1s, background .1s; font-family: inherit; width: 100%; }
+  .modeCard:hover { transform: translateX(3px); background: rgba(30,48,70,.72); }
+  .modeCard.sel { border-color: #ffcc33; background: rgba(60,50,18,.62); box-shadow: 0 0 16px rgba(255,204,51,.28); }
+  .modeCardName { font-size: 15px; font-weight: 700; letter-spacing: 2px; }
+  .modeCard.sel .modeCardName::after { content: ' ✓'; color: #ffcc33; }
+  .modeCardBlurb { font-size: 12px; color: #c3d2e2; margin-top: 3px; line-height: 1.4; }
+  .pillRow { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .pillBtn { cursor: pointer; padding: 8px 16px; border-radius: 20px; font-size: 13px; letter-spacing: 1px; color: #fff; background: rgba(20,32,48,.62); border: 1px solid rgba(255,255,255,.16); font-family: inherit; transition: transform .1s, border-color .1s, background .1s; }
+  .pillBtn:hover { transform: translateY(-1px); background: rgba(30,48,70,.72); }
+  .pillBtn.sel { border-color: #ffcc33; background: rgba(60,50,18,.62); box-shadow: 0 0 12px rgba(255,204,51,.28); color: #ffcc33; font-weight: 700; }
+
+  /* ---- Round result (winner + final scores), shown between rounds ---- */
+  #matchResultPanel { display: none; flex-direction: column; align-items: center; gap: 12px; width: 100%; }
+  #matchResultPanel h2 { font-size: 26px; letter-spacing: 3px; color: #ffcc33; text-shadow: 0 1px 10px #000; }
+  #matchResultList { display: flex; flex-direction: column; gap: 5px; width: 100%; max-width: 380px; max-height: 220px; overflow-y: auto; }
+  .mrRow { display: flex; justify-content: space-between; align-items: center; background: rgba(20,32,48,.6); border: 1px solid rgba(255,255,255,.12); border-radius: 7px; padding: 7px 12px; font-size: 14px; }
+  .mrRow.self { border-color: rgba(255,204,51,.5); }
+
+  /* ---- In-match mode/score readout ---- */
+  #modeStatus { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); font-size: 13px; letter-spacing: 1.5px; color: #ffcc33; text-shadow: 0 0 6px #000; text-align: center; white-space: nowrap; }
+
+  /* ---- Multiplayer panels (same NEON STRIKE furniture as the rest of the menu) ---- */
+  #hostPanel, #joinPanel { display: none; flex-direction: column; align-items: center; gap: 13px; width: 100%; }
+  #hostPanel h2, #joinPanel h2, #mapPanel h2 { font-size: 22px; letter-spacing: 3px; color: #fff; text-shadow: 0 1px 10px #000; }
+  .netRow { font-size: 14px; color: #cfe0f2; letter-spacing: 1px; text-shadow: 0 1px 6px rgba(0,0,0,.95); }
+  .netRow b { color: #ffcc33; letter-spacing: 2px; }
+  .addrBox { background: rgba(0,0,0,.5); border: 1px solid rgba(255,204,51,.55); border-radius: 8px; padding: 10px 16px; text-align: center; min-width: 300px; }
+  .addrLabel { font-size: 11px; letter-spacing: 2px; color: #9fb3c8; }
+  .addrValue { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 22px; font-weight: 700; color: #ffcc33; letter-spacing: 1px; user-select: all; -webkit-user-select: all; cursor: text; margin-top: 2px; word-break: break-all; }
+  .addrHint { font-size: 11px; color: #8fa3b8; margin-top: 4px; }
+  #playerList { display: flex; flex-direction: column; gap: 5px; width: 100%; max-width: 380px; max-height: 190px; overflow-y: auto; }
+  .plRow { display: flex; justify-content: space-between; align-items: center; background: rgba(20,32,48,.6); border: 1px solid rgba(255,255,255,.12); border-radius: 7px; padding: 7px 12px; font-size: 14px; }
+  .plRow.self { border-color: rgba(255,204,51,.5); }
+  .plTag { font-size: 10px; letter-spacing: 1.5px; color: #ffcc33; }
+  .netInput { width: 100%; max-width: 340px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 17px; text-align: center; padding: 11px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,.3); background: rgba(0,0,0,.45); color: #fff; letter-spacing: 1px; }
+  .netInput:focus { outline: none; border-color: #ffcc33; box-shadow: 0 0 14px rgba(255,204,51,.3); }
+  .netStatus { font-size: 13px; min-height: 18px; color: #cfe0f2; letter-spacing: 1px; }
+  .netStatus.ok { color: #6fe08a; } .netStatus.bad { color: #ff8a80; } .netStatus.busy { color: #ffcc33; }
+  .netNote { font-size: 11.5px; color: #8fa3b8; max-width: 400px; line-height: 1.5; }
+
+  /* ---- Pause menu host address ---- */
+  #pauseNet { display: none; flex-direction: column; align-items: center; gap: 8px; margin-bottom: 4px; }
+
+  /* ---- Elimination / respawn ---- */
+  #respawnMenu { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 16px; text-align: center; background: radial-gradient(circle at center, rgba(70,10,10,.42), rgba(12,4,4,.82)); color: #fff; pointer-events: auto; z-index: 6; }
+  #respawnMenu h1 { font-size: 52px; letter-spacing: 6px; color: #ff6b5e; text-shadow: 0 2px 24px #000; }
+  #respawnMenu .sub { color: #f0dada; font-size: 15px; letter-spacing: 1px; text-shadow: 0 1px 8px #000; }
+  #respawnCount { font-size: 15px; letter-spacing: 3px; color: #ffcc33; text-shadow: 0 1px 8px #000; }
+  #respawnCount b { font-size: 34px; display: block; margin-top: 2px; }
+  #respawnBtn[disabled] { opacity: .45; cursor: default; transform: none; box-shadow: none; }
+
+  /* ---- Damage feedback: brief vignette + directional arrows, never permanent ---- */
+  #hurtVig { position: absolute; inset: 0; pointer-events: none; opacity: 0; background:
+      radial-gradient(ellipse at center, rgba(255,0,0,0) 38%, rgba(190,0,0,.55) 78%, rgba(120,0,0,.8) 100%); }
+  #dmgDir { position: absolute; top: 50%; left: 50%; width: 0; height: 0; pointer-events: none; }
+  .dmgArrow { position: absolute; top: 0; left: 0; width: 76px; height: 76px; margin: -38px 0 0 -38px; transform-origin: 50% 50%; }
+  .dmgArrow i { position: absolute; left: 50%; top: -118px; width: 0; height: 0; margin-left: -17px;
+      border-left: 17px solid transparent; border-right: 17px solid transparent; border-bottom: 26px solid rgba(255,60,50,.92);
+      filter: drop-shadow(0 0 5px rgba(0,0,0,.9)); }
+  #pauseMenu { display: none; background: rgba(5,10,20,.82); }
+  #overlay h1, #pauseMenu h1 { font-size: 50px; letter-spacing: 4px; color: #fff; text-shadow: 0 2px 20px #000, 0 0 40px rgba(0,0,0,.9); }
+  #overlay p, #pauseMenu p { max-width: 600px; color: #eef; line-height: 1.6; text-shadow: 0 1px 6px rgba(0,0,0,.95); }
+  .btn { pointer-events: auto; cursor: pointer; font-size: 18px; padding: 12px 36px; background: #ffcc33; color: #221; border: none; border-radius: 8px; letter-spacing: 2px; font-weight: 700; transition: transform .1s, box-shadow .1s; min-width: 220px; }
+  .btn:hover { transform: scale(1.04); box-shadow: 0 0 20px #ffcc33; }
+  .btn.ghost { background: #334; color: #fff; }
+  .btn.ghost:hover { box-shadow: 0 0 20px #556; }
+  .key { display: inline-block; background: #333; border: 1px solid #777; border-radius: 4px; padding: 2px 8px; font-size: 13px; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud">
+  <div id="crosshair">
+    <div class="ch-line" id="cl-t"></div>
+    <div class="ch-line" id="cl-b"></div>
+    <div class="ch-line" id="cl-l"></div>
+    <div class="ch-line" id="cl-r"></div>
+    <div class="ch-dot" id="ch-dot"></div>
+    <div class="ch-ring" id="ch-ring"></div>
+    <div id="ch-pellets"></div>
+  </div>
+  <div id="scope">
+    <div class="mask"></div>
+    <div class="hline"></div>
+    <div class="vline"></div>
+    <div class="dot"></div>
+  </div>
+  <div id="topbar">
+    <span id="weapon">AR-9</span>
+    <span id="ammo">30/30</span>
+  </div>
+  <div id="modeStatus"></div>
+  <div id="bottomright">WASD move · Mouse look · LMB shoot · RMB aim<br>R reload · 1/2/3/4 weapon · Shift sprint · Space jump · C crouch · Esc menu</div>
+  <div id="hurtVig"></div>
+  <div id="dmgDir"></div>
+  <div id="killFeed"></div>
+  <div id="healthWrap">
+    <div id="healthBarBg"><div id="healthBarFg"></div></div>
+    <div id="healthText">150 / 150</div>
+  </div>
+</div>
+
+<div id="overlay">
+ <div id="menuPanel">
+  <h1>NEON STRIKE</h1>
+
+  <div id="menuRoot">
+    <p>
+      <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span> Move<br>
+      <span class="key">Q</span>/<span class="key">E</span> Peek (whilst aiming)<br>
+      <span class="key">R</span> Reload<br>
+      <span class="key">1</span>/<span class="key">2</span>/<span class="key">3</span>/<span class="key">4</span> Switch weapon 
+    </p>
+    <label id="nameField" for="playerNameInput">
+      CALLSIGN
+      <input class="netInput" id="playerNameInput" type="text" maxlength="16" spellcheck="false" autocomplete="nickname" placeholder="Player">
+    </label>
+    <div id="mapMeta">MAP: <b id="currentMapName">—</b></div>
+    <button class="btn" id="startBtn">PLAY</button>
+    <button class="btn ghost" id="hostBtn">HOST</button>
+    <button class="btn ghost" id="joinBtn">JOIN GAME</button>
+    <button class="btn ghost" id="mapSelectBtn">MAP SELECTION</button>
+    <div id="hostNotice"></div>
+  </div>
+
+  <div id="mapPanel">
+    <h2>SELECT MAP</h2>
+    <div id="mapList"></div>
+    <div class="netNote" id="mapLockNote" style="display:none">The host chooses the map for everyone in the lobby.</div>
+    <button class="btn ghost" id="mapBackBtn">BACK</button>
+  </div>
+
+  <div id="hostPanel">
+    <h2>HOST GAME</h2>
+    <div class="netRow">Map: <b id="hostMapName">—</b></div>
+    <div class="netRow">Mode: <b id="hostModeName">—</b></div>
+    <div class="netRow">Players: <b id="hostPlayerCount">1/8</b></div>
+    <div class="addrBox">
+      <div class="addrLabel">JOIN ADDRESS</div>
+      <div class="addrValue" id="hostAddr">—</div>
+      <div class="addrHint">Others on your network enter this in JOIN GAME</div>
+    </div>
+    <div id="playerList"></div>
+    <div class="netStatus" id="hostStatus"></div>
+    <button class="btn" id="hostStartBtn">START GAME</button>
+    <button class="btn ghost" id="hostSettingsBtn">GAME SETTINGS</button>
+    <button class="btn ghost" id="hostMapBtn">CHANGE MAP</button>
+    <button class="btn ghost" id="hostBackBtn">BACK</button>
+  </div>
+
+  <div id="settingsPanel">
+    <h2>GAME SETTINGS</h2>
+    <div class="settingsGroup">
+      <div class="settingsLabel">MODE</div>
+      <div id="modeList" class="modeList"></div>
+    </div>
+    <div class="settingsGroup">
+      <div class="settingsLabel">SCORE LIMIT (KILLS)</div>
+      <div class="pillRow" id="scoreLimitRow"></div>
+    </div>
+    <div class="settingsGroup">
+      <div class="settingsLabel">TIME LIMIT</div>
+      <div class="pillRow" id="timeLimitRow"></div>
+    </div>
+    <div class="settingsGroup" id="friendlyFireGroup">
+      <div class="settingsLabel">FRIENDLY FIRE</div>
+      <div class="pillRow" id="friendlyFireRow"></div>
+    </div>
+    <button class="btn ghost" id="settingsBackBtn">BACK</button>
+  </div>
+
+  <div id="matchResultPanel">
+    <h2 id="matchResultTitle">ROUND OVER</h2>
+    <div class="netRow" id="matchResultSub"></div>
+    <div class="netRow" id="matchResultTeamScore" style="display:none"></div>
+    <div id="matchResultList"></div>
+    <button class="btn" id="matchResultContinueBtn">CONTINUE</button>
+  </div>
+
+  <div id="joinPanel">
+    <h2>JOIN GAME</h2>
+    <div class="netRow">Host address:</div>
+    <input class="netInput" id="joinAddr" type="text" spellcheck="false" autocomplete="off" placeholder="Enter host address">
+    <div class="netStatus" id="joinStatus"></div>
+    <div id="joinLobby" style="display:none; width:100%; display:flex; flex-direction:column; align-items:center; gap:10px;">
+      <div class="netRow">Map: <b id="joinMapName">—</b></div>
+      <div class="netRow">Mode: <b id="joinModeName">—</b></div>
+      <div class="netRow">Players: <b id="joinPlayerCount">—</b></div>
+      <div id="joinPlayerList" class="netNote"></div>
+    </div>
+    <button class="btn" id="joinGoBtn">JOIN</button>
+    <button class="btn ghost" id="joinBackBtn">BACK</button>
+    <div class="netNote">Ask the host for their address. It is shown on their HOST screen and in their pause menu.</div>
+  </div>
+ </div>
+</div>
+
+<div id="pauseMenu">
+  <h1>PAUSED</h1>
+  <div id="pauseNet">
+    <div class="netRow">Players: <b id="pausePlayerCount">—</b></div>
+    <div class="addrBox">
+      <div class="addrLabel">JOIN ADDRESS</div>
+      <div class="addrValue" id="pauseAddr">—</div>
+      <div class="addrHint">New players enter this in JOIN GAME</div>
+    </div>
+  </div>
+  <button class="btn" id="resumeBtn">RESUME</button>
+  <button class="btn ghost" id="restartBtn">RESTART</button>
+  <button class="btn ghost" id="menuBtn">MAIN MENU</button>
+</div>
+
+<div id="respawnMenu">
+  <h1 id="respawnHeading">ELIMINATED</h1>
+  <div class="sub" id="respawnBy">You were eliminated.</div>
+  <div id="respawnCount">RESPAWN IN<b id="respawnSecs">5</b></div>
+  <button class="btn" id="respawnBtn" disabled>RESPAWN</button>
+</div>
+
+<script src="three.min.js"></script>
+<script src="net.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // ---------- Renderer / Scene / Camera ----------
+  const canvas = document.getElementById('game');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x87CEEB);
+  scene.fog = new THREE.Fog(0x9fc7e0, 45, 160);
+
+  const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 400);
+  camera.position.set(0, 1.7, 14);
+
+  // ---------- Lights (daytime) ----------
+  const hemi = new THREE.HemisphereLight(0xbfd9ff, 0x8a7a5a, 0.95);
+  scene.add(hemi);
+  const sun = new THREE.DirectionalLight(0xfff2d8, 1.15);
+  sun.position.set(45, 70, 35);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.camera.left = -90; sun.shadow.camera.right = 90;
+  sun.shadow.camera.top = 90; sun.shadow.camera.bottom = -90;
+  sun.shadow.camera.far = 220;
+  scene.add(sun);
+
+  // ---------- Materials ----------
+  const groundMat = new THREE.MeshStandardMaterial({ color: 0xb0b6bd, roughness: 0.9, metalness: 0.05 });
+  const wallMat   = new THREE.MeshStandardMaterial({ color: 0xd8cfc0, roughness: 0.7, metalness: 0.05 });
+  const floorMat  = new THREE.MeshStandardMaterial({ color: 0xc9b89a, roughness: 0.85, metalness: 0.05 });
+  const coverMat  = new THREE.MeshStandardMaterial({ color: 0x9aa3ad, roughness: 0.6, metalness: 0.2 });
+  const pillarMat = new THREE.MeshStandardMaterial({ color: 0xcfd6dd, roughness: 0.5, metalness: 0.3 });
+  const stairMat  = new THREE.MeshStandardMaterial({ color: 0x8a7d6b, roughness: 0.7, metalness: 0.1 });
+  const roofMat   = new THREE.MeshStandardMaterial({ color: 0x9a8a72, roughness: 0.8, metalness: 0.1 });
+  const glassMat  = new THREE.MeshStandardMaterial({ color: 0x9fd0e0, roughness: 0.08, metalness: 0.3, transparent: true, opacity: 0.45 });
+  const mullionMat= new THREE.MeshStandardMaterial({ color: 0x2b2f33, roughness: 0.5, metalness: 0.4 });
+  const trimMat   = new THREE.MeshStandardMaterial({ color: 0xece4d3, roughness: 0.6, metalness: 0.05 });
+  const plinthMat = new THREE.MeshStandardMaterial({ color: 0x6c665c, roughness: 0.9, metalness: 0.05 });
+  const doorFrameMat = new THREE.MeshStandardMaterial({ color: 0x3a332c, roughness: 0.55, metalness: 0.35 });
+  const parapetMat = new THREE.MeshStandardMaterial({ color: 0x8d8577, roughness: 0.85, metalness: 0.05 });
+  const acMat = new THREE.MeshStandardMaterial({ color: 0xc4c8cc, roughness: 0.5, metalness: 0.4 });
+
+  // Every material above is shared across maps, so map unloading must never dispose them.
+  const sharedMaterials = new Set([groundMat, wallMat, floorMat, coverMat, pillarMat, stairMat,
+    roofMat, glassMat, mullionMat, trimMat, plinthMat, doorFrameMat, parapetMat, acMat]);
+
+  // ---------- World container ----------
+  // Every piece of map geometry lives under this one group. Swapping maps = emptying this
+  // group and running another map's build(). The scene, camera, lights, player, gun and all
+  // gameplay systems are untouched by a map change.
+  const world = new THREE.Group();
+  scene.add(world);
+  function worldAdd(o) { world.add(o); return o; }
+
+  const S = 55;                 // Downtown's half-extent (kept for that map's layout maths)
+  let mapBounds = 55;           // half-extent of whatever map is currently loaded
+
+  // ---------- Streets / ground detail ----------
+  function groundRect(x, z, w, d, color, y) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshBasicMaterial({ color }));
+    m.rotation.x = -Math.PI / 2;
+    m.position.set(x, y || 0.04, z);
+    m.receiveShadow = true;
+    worldAdd(m);
+    return m;
+  }
+  const ROAD = 0x3a3f45, SIDEWALK = 0xb8bcc2, MARK = 0xe8c33a, CROSS = 0xe8e8e8;
+  const ROAD_W = 6, sw = 1.6;
+  function drawDashes(axis, fixed, from, to) {
+    for (let p = from; p < to; p += 3) {
+      if (axis === 'x') groundRect(p + 0.8, fixed, 1.6, 0.18, MARK, 0.07);
+      else groundRect(fixed, p + 0.8, 0.18, 1.6, MARK, 0.07);
+    }
+  }
+  function crosswalk(x, z, axis) {
+    for (let i = -2; i <= 2; i++) {
+      if (axis === 'x') groundRect(x, z + i * 0.7, 0.5, 0.45, CROSS, 0.06);
+      else groundRect(x + i * 0.7, z, 0.45, 0.5, CROSS, 0.06);
+    }
+  }
+  // ---------- Collision structures ----------
+  const colliders = [];   // walls: {x,z,w,d,yMin,yMax}
+  const floors = [];      // walkable slabs: {x,z,w,d,height}
+  const ramps = [];       // stairs: {x1,x2,z1,z2,axis,from,to}
+  const solidMeshes = []; // every mesh that should stop a bullet: walls, floor slabs, stairs, props
+
+  const FLOOR_H = 3.5, T = 0.4, DOOR_W = 2.2, STAIR_W = 2.2, STAIR_LEN = 5, SLAB_T = 0.3;
+
+  // ---------- Health (every character: player + dummies — 150 HP, passive regen) ----------
+  const HEALTH_MAX = 150, REGEN_DELAY = 4, REGEN_RATE = 12; // hp/sec, after 4s without taking damage
+  const player = { health: HEALTH_MAX, maxHealth: HEALTH_MAX, lastDamageT: -999 };
+  function regenEntity(e, dtv, nowT) {
+    if (e.health < e.maxHealth && nowT - e.lastDamageT > REGEN_DELAY) {
+      e.health = Math.min(e.maxHealth, e.health + REGEN_RATE * dtv);
+    }
+  }
+
+  function addWall(x, z, w, h, d, yMin, mat) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat || wallMat);
+    mesh.position.set(x, yMin + h / 2, z);
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    worldAdd(mesh);
+    colliders.push({ x, z, w, d, yMin, yMax: yMin + h });
+    solidMeshes.push(mesh);
+    return mesh;
+  }
+  // Visual-only trim piece (no collider) — for cornices, plinths, quoins, parapets
+  function addTrim(x, z, w, h, d, yMin, mat) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    mesh.position.set(x, yMin + h / 2, z);
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    worldAdd(mesh);
+    return mesh;
+  }
+
+  function addFloorSlab(x1, x2, z1, z2, height, mat) {
+    if (x2 <= x1 || z2 <= z1) return null;
+    const cx = (x1 + x2) / 2, cz = (z1 + z2) / 2;
+    const w = x2 - x1, d = z2 - z1;
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, SLAB_T, d), mat || floorMat);
+    mesh.position.set(cx, height - SLAB_T / 2, cz);
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    worldAdd(mesh);
+    floors.push({ x: cx, z: cz, w, d, height });
+    solidMeshes.push(mesh);
+    return mesh;
+  }
+
+  function addRamp(x1, x2, z1, z2, from, to, axis, mat, showTreads = true) {
+    const len = axis === 'x' ? (x2 - x1) : (z2 - z1);
+    const w = axis === 'x' ? (z2 - z1) : (x2 - x1);
+    const rise = to - from;
+
+    // Solid wedge: flat bottom sits flush on the lower floor for the whole run,
+    // and the sloped top face is the EXACT line the physics uses (getGroundHeight),
+    // so the tread surface touches the upper floor/wall with no gap at either end.
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0);
+    shape.lineTo(len, 0);
+    shape.lineTo(len, rise);
+    shape.closePath();
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: w, bevelEnabled: false });
+    geo.translate(0, 0, -w / 2);
+    const mesh = new THREE.Mesh(geo, mat || stairMat);
+    if (axis === 'x') {
+      mesh.position.set(x1, from, (z1 + z2) / 2);
+    } else {
+      mesh.rotation.y = -Math.PI / 2;
+      mesh.position.set((x1 + x2) / 2, from, z1);
+    }
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    worldAdd(mesh);
+    solidMeshes.push(mesh);
+
+    if (showTreads) {
+      // Thin tread-line accents flush on the slope surface (purely visual, sit on solid wedge)
+      const angle = Math.atan2(rise, len);
+      const treads = 6;
+      for (let i = 1; i < treads; i++) {
+        const t = i / treads;
+        const tx = axis === 'x' ? x1 + len * t : (x1 + x2) / 2;
+        const tz = axis === 'x' ? (z1 + z2) / 2 : z1 + len * t;
+        const ty = from + rise * t;
+        const strip = new THREE.Mesh(new THREE.BoxGeometry(axis === 'x' ? 0.05 : w * 0.94, 0.05, axis === 'x' ? w * 0.94 : 0.05), mullionMat);
+        strip.position.set(tx, ty + 0.03, tz);
+        if (axis === 'x') strip.rotation.z = -angle; else strip.rotation.x = angle;
+        worldAdd(strip);
+      }
+    }
+
+    ramps.push({ x1, x2, z1, z2, axis, from, to });
+  }
+
+  // Solid pitched (gable) roof: a triangular-prism, built the same way addRamp builds its
+  // wedge — a Shape extruded along the ridge — so there is no rotation-sign guesswork.
+  // `axis` is the direction the ridge beam runs; the two faces slope down away from it to
+  // meet the wall tops on the other axis. Visual only (no collider), like the flat box
+  // roofs elsewhere, so bullets and footsteps pass through it same as before.
+  function addGableRoof(cx, cz, ridgeLen, span, rise, baseY, mat, axis, overhang) {
+    overhang = overhang == null ? 0.6 : overhang;
+    const half = span / 2 + overhang;
+    const shape = new THREE.Shape();
+    shape.moveTo(-half, 0);
+    shape.lineTo(half, 0);
+    shape.lineTo(0, rise);
+    shape.closePath();
+    const depth = ridgeLen + overhang * 1.4;
+    const geo = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false });
+    geo.translate(0, 0, -depth / 2);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(cx, baseY, cz);
+    if (axis === 'x') mesh.rotation.y = Math.PI / 2;
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    worldAdd(mesh);
+    // Ridge cap beam along the peak
+    const capLen = depth - overhang * 0.6;
+    const cap = new THREE.Mesh(
+      new THREE.BoxGeometry(axis === 'x' ? capLen : 0.28, 0.26, axis === 'x' ? 0.28 : capLen),
+      mat
+    );
+    cap.position.set(cx, baseY + rise + 0.1, cz);
+    cap.castShadow = true;
+    worldAdd(cap);
+    return mesh;
+  }
+
+  // ---------- Buildings (2 floors + stairs) ----------
+  function wallAlongX(x1, x2, z, thickness, yMin, height, gaps, mat) {
+    const sorted = gaps.slice().sort((a, b) => a[0] - b[0]);
+    let cur = x1; const segs = [];
+    for (const [g1, g2] of sorted) { if (g1 > cur) segs.push([cur, g1]); cur = Math.max(cur, g2); }
+    if (cur < x2) segs.push([cur, x2]);
+    for (const [s, e] of segs) { const len = e - s, mid = (s + e) / 2; addWall(mid, z, len, height, thickness, yMin, mat); }
+  }
+  function wallAlongZ(z1, z2, x, thickness, yMin, height, gaps, mat) {
+    const sorted = gaps.slice().sort((a, b) => a[0] - b[0]);
+    let cur = z1; const segs = [];
+    for (const [g1, g2] of sorted) { if (g1 > cur) segs.push([cur, g1]); cur = Math.max(cur, g2); }
+    if (cur < z2) segs.push([cur, z2]);
+    for (const [s, e] of segs) { const len = e - s, mid = (s + e) / 2; addWall(x, mid, thickness, height, len, yMin, mat); }
+  }
+
+  // Ribbon of individual windows (glass pane + mullion cross + solid piers between)
+  // along one exterior wall segment, replacing what used to be a fully open gap.
+  function addFacadeWindows(axis, a1, a2, fixed, thickness, yBase, hgt, mat, opts) {
+    const winW = (opts && opts.winW) || 2.0, pierW = (opts && opts.pierW) || 0.7;
+    const mullions = !opts || opts.mullions !== false;
+    const totalLen = a2 - a1;
+    const n = Math.max(1, Math.floor((totalLen - pierW) / (winW + pierW)));
+    const usedLen = n * winW + (n + 1) * pierW;
+    const start = a1 + (totalLen - usedLen) / 2;
+    const seg = (s, e) => {
+      const len = e - s, mid = (s + e) / 2;
+      if (len <= 0.01) return;
+      if (axis === 'x') addWall(mid, fixed, len, hgt, thickness, yBase, mat);
+      else addWall(fixed, mid, thickness, hgt, len, yBase, mat);
+    };
+    seg(start, start + pierW);
+    for (let i = 0; i < n; i++) {
+      const wStart = start + pierW + i * (winW + pierW);
+      const wc = wStart + winW / 2;
+      const gh = hgt * 0.8, gy = yBase + hgt * 0.1;
+      if (!mullions) { seg(wStart + winW, wStart + winW + pierW); continue; }
+      if (axis === 'x') {
+        const v = new THREE.Mesh(new THREE.BoxGeometry(0.04, gh, thickness * 0.6), mullionMat);
+        v.position.set(wc, gy + gh / 2, fixed); worldAdd(v);
+        const hb = new THREE.Mesh(new THREE.BoxGeometry(winW * 0.92, 0.04, thickness * 0.6), mullionMat);
+        hb.position.set(wc, gy + gh / 2, fixed); worldAdd(hb);
+      } else {
+        const v = new THREE.Mesh(new THREE.BoxGeometry(thickness * 0.6, gh, 0.04), mullionMat);
+        v.position.set(fixed, gy + gh / 2, wc); worldAdd(v);
+        const hb = new THREE.Mesh(new THREE.BoxGeometry(thickness * 0.6, 0.04, winW * 0.92), mullionMat);
+        hb.position.set(fixed, gy + gh / 2, wc); worldAdd(hb);
+      }
+      seg(wStart + winW, wStart + winW + pierW);
+    }
+  }
+
+  // Frame + small canopy around a door opening (a1..a2 along the wall, at position `fixed`,
+  // facing outward in direction `out` on axis `axis`)
+  function addDoorDetail(axis, a1, a2, fixed, out) {
+    const DOOR_H = 2.3, postT = 0.12;
+    const mk = (x, z, w, h, d, y) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), doorFrameMat); m.position.set(x, y + h / 2, z); m.castShadow = true; worldAdd(m); };
+    if (axis === 'x') {
+      mk(a1, fixed, postT, DOOR_H, T + 0.1, 0);
+      mk(a2, fixed, postT, DOOR_H, T + 0.1, 0);
+      mk((a1 + a2) / 2, fixed, (a2 - a1) + postT, 0.14, T + 0.1, DOOR_H);
+      const canopy = new THREE.Mesh(new THREE.BoxGeometry((a2 - a1) + 0.6, 0.08, 0.7), trimMat);
+      canopy.position.set((a1 + a2) / 2, DOOR_H + 0.35, fixed + out * 0.45);
+      canopy.castShadow = true; worldAdd(canopy);
+      const step = new THREE.Mesh(new THREE.BoxGeometry((a2 - a1) + 0.8, 0.12, 0.6), plinthMat);
+      step.position.set((a1 + a2) / 2, 0.06, fixed + out * 0.4);
+      step.receiveShadow = true; worldAdd(step);
+    } else {
+      mk(fixed, a1, T + 0.1, DOOR_H, postT, 0);
+      mk(fixed, a2, T + 0.1, DOOR_H, postT, 0);
+      mk(fixed, (a1 + a2) / 2, T + 0.1, 0.14, (a2 - a1) + postT, DOOR_H);
+      const canopy = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.08, (a2 - a1) + 0.6), trimMat);
+      canopy.position.set(fixed + out * 0.45, DOOR_H + 0.35, (a1 + a2) / 2);
+      canopy.castShadow = true; worldAdd(canopy);
+      const step = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.12, (a2 - a1) + 0.8), plinthMat);
+      step.position.set(fixed + out * 0.4, 0.06, (a1 + a2) / 2);
+      step.receiveShadow = true; worldAdd(step);
+    }
+  }
+
+  function buildBuilding(cx, cz, w, d, doorSides, props, showStairTreads = true) {
+    const x1 = cx - w / 2, x2 = cx + w / 2;
+    const z1 = cz - d / 2, z2 = cz + d / 2;
+    const gf = new THREE.Mesh(new THREE.PlaneGeometry(w - T, d - T), floorMat);
+    gf.rotation.x = -Math.PI / 2; gf.position.set(cx, 0.03, cz); gf.receiveShadow = true;
+    worldAdd(gf);
+    const door = (s) => { const c = DOOR_W / 2; return (s === 'n' || s === 's') ? [[cx - c, cx + c]] : [[cz - c, cz + c]]; };
+    const has = (s) => doorSides.indexOf(s) >= 0;
+    wallAlongX(x1, x2, z1, T, 0, FLOOR_H, has('n') ? door('n') : []);
+    wallAlongX(x1, x2, z2, T, 0, FLOOR_H, has('s') ? door('s') : []);
+    wallAlongZ(z1, z2, x1, T, 0, FLOOR_H, has('w') ? door('w') : []);
+    wallAlongZ(z1, z2, x2, T, 0, FLOOR_H, has('e') ? door('e') : []);
+
+    // Foundation plinth (visual base course, slightly proud of the wall face)
+    addTrim(cx, z1 - 0.08, w + 0.3, 0.35, 0.16, 0, plinthMat);
+    addTrim(cx, z2 + 0.08, w + 0.3, 0.35, 0.16, 0, plinthMat);
+    addTrim(x1 - 0.08, cz, 0.16, 0.35, d + 0.3, 0, plinthMat);
+    addTrim(x2 + 0.08, cz, 0.16, 0.35, d + 0.3, 0, plinthMat);
+
+    // Door frames, canopies and entry steps
+    if (has('n')) addDoorDetail('x', cx - DOOR_W / 2, cx + DOOR_W / 2, z1, -1);
+    if (has('s')) addDoorDetail('x', cx - DOOR_W / 2, cx + DOOR_W / 2, z2, 1);
+    if (has('w')) addDoorDetail('z', cz - DOOR_W / 2, cz + DOOR_W / 2, x1, -1);
+    if (has('e')) addDoorDetail('z', cz - DOOR_W / 2, cz + DOOR_W / 2, x2, 1);
+
+    const sx1 = x2 - T / 2, sx0 = sx1 - STAIR_LEN;
+    const sz1 = z2 - T / 2, sz0 = sz1 - STAIR_W;
+    const ix1 = x1 + T / 2, ix2 = x2 - T / 2, iz1 = z1 + T / 2, iz2 = z2 - T / 2;
+    addFloorSlab(ix1, sx0, iz1, iz2, FLOOR_H);
+    addFloorSlab(sx1, ix2, iz1, iz2, FLOOR_H);
+    addFloorSlab(sx0, sx1, iz1, sz0, FLOOR_H);
+    addFloorSlab(sx0, sx1, sz1, iz2, FLOOR_H);
+
+    // Upper floor: solid spandrel + glazed window ribbon + lintel
+    const WIN_TOP = FLOOR_H + 2.2, ROOF_H = FLOOR_H + 2.5;
+    wallAlongX(x1, x2, z1, T, FLOOR_H, 1.0, []);
+    wallAlongX(x1, x2, z2, T, FLOOR_H, 1.0, []);
+    wallAlongZ(z1, z2, x1, T, FLOOR_H, 1.0, []);
+    wallAlongZ(z1, z2, x2, T, FLOOR_H, 1.0, []);
+    // Cornice line marking the floor division
+    addTrim(cx, z1, w + 0.16, 0.1, T + 0.16, FLOOR_H + 0.95, trimMat);
+    addTrim(cx, z2, w + 0.16, 0.1, T + 0.16, FLOOR_H + 0.95, trimMat);
+    addTrim(x1, cz, T + 0.16, 0.1, d + 0.16, FLOOR_H + 0.95, trimMat);
+    addTrim(x2, cz, T + 0.16, 0.1, d + 0.16, FLOOR_H + 0.95, trimMat);
+
+    const winY = FLOOR_H + 1.0, winH = WIN_TOP - winY;
+    addFacadeWindows('x', x1, x2, z1, T, winY, winH);
+    addFacadeWindows('x', x1, x2, z2, T, winY, winH);
+    addFacadeWindows('z', z1, z2, x1, T, winY, winH);
+    addFacadeWindows('z', z1, z2, x2, T, winY, winH);
+
+    wallAlongX(x1, x2, z1, T, WIN_TOP, 0.3, []);
+    wallAlongX(x1, x2, z2, T, WIN_TOP, 0.3, []);
+    wallAlongZ(z1, z2, x1, T, WIN_TOP, 0.3, []);
+    wallAlongZ(z1, z2, x2, T, WIN_TOP, 0.3, []);
+
+    // Roof (no shadow cast so the interior stays lit) + parapet + rooftop unit
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.8, 0.4, d + 0.8), roofMat);
+    roof.position.set(cx, ROOF_H + 0.2, cz);
+    roof.receiveShadow = true;
+    worldAdd(roof);
+    const roofTop = ROOF_H + 0.4;
+    addTrim(cx, cz - d / 2 - 0.32, w + 0.8, 0.45, 0.14, roofTop, parapetMat);
+    addTrim(cx, cz + d / 2 + 0.32, w + 0.8, 0.45, 0.14, roofTop, parapetMat);
+    addTrim(cx - w / 2 - 0.32, cz, 0.14, 0.45, d + 0.8, roofTop, parapetMat);
+    addTrim(cx + w / 2 + 0.32, cz, 0.14, 0.45, d + 0.8, roofTop, parapetMat);
+    const ac = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.6, 1.0), acMat);
+    ac.position.set(cx - w / 4, roofTop + 0.3, cz - d / 4);
+    ac.castShadow = true; ac.receiveShadow = true; worldAdd(ac);
+    const vent = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.5, 10), acMat);
+    vent.position.set(cx + w / 4, roofTop + 0.25, cz + d / 4);
+    vent.castShadow = true; worldAdd(vent);
+
+    // (Stairwell-top guard rail intentionally removed — it was blocking the transition
+    // from the stairs onto the upper floor. The exterior walls still guard the drop.)
+
+    addRamp(sx0, sx1, sz0, sz1, 0, FLOOR_H, 'x', null, showStairTreads);
+
+    props.forEach(p => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(p[2], p[3], p[4]), coverMat);
+      m.position.set(cx + p[0], p[3] / 2, cz + p[1]);
+      m.castShadow = true; m.receiveShadow = true;
+      worldAdd(m);
+      colliders.push({ x: cx + p[0], z: cz + p[1], w: p[2], d: p[4], yMin: 0, yMax: p[3] });
+      solidMeshes.push(m);
+    });
+  }
+
+  // ---------- Test dummies (static, shootable targets) ----------
+  const targets = [];
+  const healthBars = [];
+  function buildHealthBar() {
+    const g = new THREE.Group();
+    const bg = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.09), new THREE.MeshBasicMaterial({ color: 0x2a0e0e, depthTest: false }));
+    const fg = new THREE.Mesh(new THREE.PlaneGeometry(0.58, 0.06), new THREE.MeshBasicMaterial({ color: 0x2ee06a, depthTest: false }));
+    fg.position.z = 0.001;
+    bg.renderOrder = 998; fg.renderOrder = 999;
+    g.add(bg, fg);
+    worldAdd(g);
+    return { group: g, fg, halfW: 0.29 };
+  }
+  function buildDummy(x, z, rotY, colorMain, colorDark) {
+    // Multiplayer combat is between real players only. Because every map builds its
+    // dummies through this one function, suppressing it here guarantees no dummy can
+    // exist in a multiplayer world — including leftovers from a previous single-player
+    // session, since loadMap() rebuilds the world from nothing.
+    if (gameMode === 'multiplayer') return null;
+    const mat  = new THREE.MeshStandardMaterial({ color: colorMain, roughness: 0.7, metalness: 0.1, emissive: 0x000000 });
+    const matD = new THREE.MeshStandardMaterial({ color: colorDark, roughness: 0.75, metalness: 0.1, emissive: 0x000000 });
+    const skin = new THREE.MeshStandardMaterial({ color: 0xd8a878, roughness: 0.85, emissive: 0x000000 });
+    const group = new THREE.Group();
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.62, 0.28), mat); torso.position.y = 1.02;
+    const hips  = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.24, 0.26), matD); hips.position.y = 0.66;
+    const head  = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), skin); head.position.y = 1.55;
+    const legL  = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.1, 0.78, 8), matD); legL.position.set(-0.13, 0.39, 0);
+    const legR  = legL.clone(); legR.position.x = 0.13;
+    const armL  = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.075, 0.6, 8), mat); armL.position.set(-0.33, 1.08, 0);
+    const armR  = armL.clone(); armR.position.x = 0.33;
+    const meshes = [torso, hips, head, legL, legR, armL, armR];
+    head.userData.part = 'head';
+    meshes.forEach(m => { m.castShadow = true; m.receiveShadow = true; group.add(m); });
+    group.position.set(x, 0, z);
+    group.rotation.y = rotY;
+    worldAdd(group);
+    colliders.push({ x, z, w: 0.55, d: 0.5, yMin: 0, yMax: 1.8 });
+    const hb = buildHealthBar();
+    hb.group.position.set(x, 1.92, z);
+    healthBars.push(hb);
+    const target = { meshes, materials: [mat, matD, skin], flashT: 0, health: HEALTH_MAX, maxHealth: HEALTH_MAX, lastDamageT: -999, hb };
+    meshes.forEach(m => m.userData.target = target);
+    targets.push(target);
+    return target;
+  }
+  // =====================================================================
+  // MAP SYSTEM
+  // ---------------------------------------------------------------------
+  // A map is a plain object registered with defineMap(). Its build() draws into the
+  // `world` group and fills the shared colliders / floors / ramps / solidMeshes /
+  // targets arrays, exactly like the original map always did — so movement, collision,
+  // shooting, dummies, the HUD and the aerial menu camera all work unchanged on any map.
+  // To add a third map later: write a build(), call defineMap(), done.
+  // =====================================================================
+  const MapRegistry = {};
+  const mapOrder = [];
+  function defineMap(def) { MapRegistry[def.id] = def; mapOrder.push(def.id); return def; }
+  let currentMapId = null;
+
+  // ---------- Rain (one LineSegments system, re-seeded per camera mode) ----------
+  // Line segments keep a constant on-screen width at any distance, which is what makes
+  // the same rain readable both from eye level and from the aerial menu camera ~80 units up.
+  let rain = null;
+  function startRain(cfg) {
+    const count = cfg.count || 9000;
+    const verts = new Float32Array(count * 6);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+    const mat = new THREE.LineBasicMaterial({
+      color: cfg.color || 0xbcd4e6, transparent: true, opacity: cfg.opacity || 0.5, fog: false
+    });
+    const mesh = new THREE.LineSegments(geo, mat);
+    mesh.frustumCulled = false;   // the drop cloud is rebuilt around the camera every frame
+    mesh.renderOrder = 5;
+    worldAdd(mesh);
+    rain = {
+      mesh, verts, count,
+      x: new Float32Array(count), y: new Float32Array(count), z: new Float32Array(count),
+      spd: new Float32Array(count),
+      speed: cfg.speed || 38, streak: cfg.streak || 0.85, wind: cfg.wind || 0.16,
+      mode: null
+    };
+    seedRain(true);
+  }
+  function stopRain() { rain = null; }   // the mesh itself is disposed with the rest of the world
+
+  function rainVolume() {
+    // Aerial menu camera: fill the whole map. FPS camera: a column that travels with the player.
+    if (menuView) return { cx: 0, cz: 0, half: mapBounds + 6, bottom: -0.5, top: 46, scale: 3.4 };
+    return { cx: camera.position.x, cz: camera.position.z, half: 34, bottom: -0.5, top: camera.position.y + 22, scale: 1 };
+  }
+  // The height of the topmost floor/roof/bridge-deck slab covering this (x,z) column, or
+  // -Infinity if the column is open to the sky. This is exactly the `floors` array the
+  // physics already uses for ceilings, so it stays correct automatically as maps change —
+  // a raindrop simply cannot exist below whatever the player's own ceiling check would hit.
+  function topSolidHeight(x, z) {
+    let top = -Infinity;
+    for (const f of floors) {
+      if (x >= f.x - f.w / 2 && x <= f.x + f.w / 2 && z >= f.z - f.d / 2 && z <= f.z + f.d / 2) {
+        if (f.height > top) top = f.height;
+      }
+    }
+    return top;
+  }
+  function rainFloorAt(x, z, v) { return Math.max(v.bottom, topSolidHeight(x, z)); }
+  function seedRain() {
+    if (!rain) return;
+    const v = rainVolume();
+    for (let i = 0; i < rain.count; i++) {
+      rain.x[i] = v.cx + (Math.random() - 0.5) * 2 * v.half;
+      rain.z[i] = v.cz + (Math.random() - 0.5) * 2 * v.half;
+      const floorY = rainFloorAt(rain.x[i], rain.z[i], v);
+      rain.y[i] = floorY + Math.random() * Math.max(0.01, v.top - floorY);
+      rain.spd[i] = 0.75 + Math.random() * 0.5;
+    }
+    rain.mode = menuView ? 'aerial' : 'fps';
+  }
+  function updateRain(dt) {
+    if (!rain) return;
+    const wanted = menuView ? 'aerial' : 'fps';
+    if (wanted !== rain.mode) seedRain();      // camera changed role — redistribute the cloud
+    const v = rainVolume();
+    const streak = rain.streak * v.scale, drift = rain.wind * streak;
+    const V = rain.verts;
+    for (let i = 0; i < rain.count; i++) {
+      rain.y[i] -= rain.speed * rain.spd[i] * dt;
+      rain.x[i] += rain.wind * rain.speed * rain.spd[i] * dt * 0.35;
+
+      // Keep the cloud wrapped around the camera/menu volume so it never runs out ahead.
+      if (rain.x[i] < v.cx - v.half) rain.x[i] += 2 * v.half;
+      else if (rain.x[i] > v.cx + v.half) rain.x[i] -= 2 * v.half;
+      if (rain.z[i] < v.cz - v.half) rain.z[i] += 2 * v.half;
+      else if (rain.z[i] > v.cz + v.half) rain.z[i] -= 2 * v.half;
+
+      // Never let a drop exist below whatever roof/floor/bridge-deck covers its column —
+      // this is what stops rain from appearing inside buildings or under bridges.
+      const floorY = rainFloorAt(rain.x[i], rain.z[i], v);
+      if (rain.y[i] < floorY) {
+        rain.x[i] = v.cx + (Math.random() - 0.5) * 2 * v.half;
+        rain.z[i] = v.cz + (Math.random() - 0.5) * 2 * v.half;
+        const nf = rainFloorAt(rain.x[i], rain.z[i], v);
+        rain.y[i] = nf + Math.random() * Math.max(0.01, v.top - nf);
+      }
+      const j = i * 6;
+      V[j]     = rain.x[i];          V[j + 1] = rain.y[i];              V[j + 2] = rain.z[i];
+      V[j + 3] = rain.x[i] + drift;  V[j + 4] = rain.y[i] + streak;     V[j + 5] = rain.z[i];
+    }
+    rain.mesh.geometry.attributes.position.needsUpdate = true;
+  }
+
+  // ---------- Atmosphere (same fog/light objects, re-tuned per map) ----------
+  function applyAtmosphere(a) {
+    scene.background.setHex(a.sky);
+    scene.fog.color.setHex(a.fog);
+    scene.fog.near = a.fogNear; scene.fog.far = a.fogFar;
+    fogDefault.near = a.fogNear; fogDefault.far = a.fogFar;
+    hemi.color.setHex(a.hemiSky); hemi.groundColor.setHex(a.hemiGround); hemi.intensity = a.hemiIntensity;
+    sun.color.setHex(a.sunColor); sun.intensity = a.sunIntensity;
+    sun.position.set(a.sunPos[0], a.sunPos[1], a.sunPos[2]);
+  }
+
+  // =====================================================================
+  // MAP 1 — DOWNTOWN (the original map, unchanged geometry, now inside a builder)
+  // =====================================================================
+  defineMap({
+    id: 'downtown',
+    name: 'Downtown',
+    blurb: 'The original street block. Sunny, open roads, five buildings with rooftop access.',
+    halfSize: 55,
+    spawn: { x: 0, z: 14, yaw: 0 },
+    atmosphere: {
+      sky: 0x87CEEB, fog: 0x9fc7e0, fogNear: 45, fogFar: 160,
+      hemiSky: 0xbfd9ff, hemiGround: 0x8a7a5a, hemiIntensity: 0.95,
+      sunColor: 0xfff2d8, sunIntensity: 1.15, sunPos: [45, 70, 35]
+    },
+    build() {
+      const mapSpan = S * 2 + 2; // stop the exterior ground at the outside edge of the walls
+      const ground = new THREE.Mesh(new THREE.PlaneGeometry(mapSpan, mapSpan), groundMat);
+      ground.rotation.x = -Math.PI / 2;
+      ground.receiveShadow = true;
+      worldAdd(ground);
+
+      // Clean road surfaces without lane dashes or crosswalk squares.
+      [[-24, 0], [24, 0]].forEach(([x, z]) => groundRect(x, z, ROAD_W, mapSpan, ROAD, 0.04));
+      [[0, -24], [0, 24]].forEach(([x, z]) => groundRect(x, z, mapSpan, ROAD_W, ROAD, 0.04));
+
+      // Perimeter walls
+      addWall(0, -S, S * 2, 4, 2, 0);
+
+      // Restore cover along the four outer side pieces, leaving the inner roads clear.
+      [[-45, 0], [45, 0], [0, -45], [0, 45]].forEach(([x, z]) => addWall(x, z, 4, 3, 10, 0));
+      addWall(0, S, S * 2, 4, 2, 0);
+      addWall(-S, 0, 2, 4, S * 2, 0);
+      addWall(S, 0, 2, 4, S * 2, 0);
+
+      buildBuilding(0, 0, 18, 18, ['n', 's', 'e', 'w'], [[0, 0, 2.5, 3, 2.5]], false);
+      buildBuilding(-40, -40, 16, 16, ['s', 'e'], [[-3, -3, 2, 1.5, 2], [3, 3, 2, 1.5, 2]], false);
+      buildBuilding(40, -40, 14, 14, ['s', 'w'], [[0, 0, 2, 1.5, 2]], false);
+      buildBuilding(-40, 40, 14, 14, ['n', 'e'], [[-3, 0, 2, 1.5, 2], [3, 0, 2, 1.5, 2]], false);
+      buildBuilding(40, 40, 16, 16, ['n', 'w'], [[0, 0, 2, 1.5, 2]], false);
+
+      [[-S + 1, -S + 1], [S - 1, -S + 1], [-S + 1, S - 1], [S - 1, S - 1]].forEach(([x, z]) => {
+        const p = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 4, 12), pillarMat);
+        p.position.set(x, 2, z); p.castShadow = true; worldAdd(p);
+      });
+
+      buildDummy(0, 10, Math.PI, 0xb5432f, 0x7a2c1f);
+      buildDummy(4.5, 7, Math.PI * 0.8, 0xb5432f, 0x7a2c1f);
+      buildDummy(8, 2, -Math.PI / 2, 0x3f7ab5, 0x27506f);
+      buildDummy(-8, -2, Math.PI / 2, 0x3f7ab5, 0x27506f);
+      buildDummy(0, -11, 0, 0xb5432f, 0x7a2c1f);
+    }
+  });
+
+  // =====================================================================
+  // MAP 2 — SKYBRIDGE
+  // Four 3-storey towers in a square, linked by elevated glass bridges, in the rain.
+  // =====================================================================
+  defineMap({
+    id: 'skybridge',
+    name: 'Skybridge',
+    blurb: 'Four rain-soaked towers joined by glass walkways. Three floors, roofs, and a lot of sightlines.',
+    halfSize: 62,
+    spawn: { x: 0, z: 34, yaw: Math.PI },
+    atmosphere: {
+      sky: 0x565f6a, fog: 0x606c78, fogNear: 22, fogFar: 125,
+      hemiSky: 0x99acbe, hemiGround: 0x363c43, hemiIntensity: 0.9,
+      sunColor: 0xc9d5e0, sunIntensity: 0.52, sunPos: [30, 80, -20]
+    },
+    rain: { count: 9000, speed: 40, streak: 0.95, wind: 0.18, color: 0xc8dcec, opacity: 0.5 },
+    build() { buildSkybridge(); }
+  });
+
+  // =====================================================================
+  // MAP 3 — FROSTLINE
+  // A snow village: a central watchtower, log-cabin lodges linked to it by raised
+  // wooden bridges (floor-2 height, matching the skybridge's bridge levels), smaller
+  // village houses in the corners, pine trees, lanterns, and frozen ponds.
+  // =====================================================================
+  function buildFrostline() {
+    // ---- Palette ----
+    const snowGround = new THREE.MeshStandardMaterial({ color: 0xe9f1f5, roughness: 0.96, metalness: 0 });
+    const snowPath = 0xd7e4ea, icePath = 0x9fb8c4, stonePath = 0x9aa0a4, pondColor = 0xb6d7e2;
+    const stoneMat     = new THREE.MeshStandardMaterial({ color: 0x878d92, roughness: 0.9,  metalness: 0.04 });
+    const logWallLight = new THREE.MeshStandardMaterial({ color: 0x8a6a4f, roughness: 0.85, metalness: 0.02 });
+    const logWallDark  = new THREE.MeshStandardMaterial({ color: 0x4a3527, roughness: 0.85, metalness: 0.02 });
+    const snowRoof     = new THREE.MeshStandardMaterial({ color: 0xf5f9fb, roughness: 0.95, metalness: 0 });
+    const roofRed      = new THREE.MeshStandardMaterial({ color: 0x8a3b3f, roughness: 0.75, metalness: 0.05 });
+    const roofBlue     = new THREE.MeshStandardMaterial({ color: 0x3c5266, roughness: 0.75, metalness: 0.05 });
+    const towerCapMat  = new THREE.MeshStandardMaterial({ color: 0x5b2f33, roughness: 0.7,  metalness: 0.08 });
+    const woodFloorMat = new THREE.MeshStandardMaterial({ color: 0x7a5c42, roughness: 0.8,  metalness: 0.02 });
+    const pineDark = new THREE.MeshStandardMaterial({ color: 0x2f5a41, roughness: 0.85 });
+    const pineSnow = new THREE.MeshStandardMaterial({ color: 0xeef4f6, roughness: 0.9 });
+    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3524, roughness: 0.9 });
+    const lanternMat = new THREE.MeshStandardMaterial({ color: 0xffdd88, emissive: 0xffaa33, emissiveIntensity: 0.9, roughness: 0.4 });
+
+    // ---- Snowfield + lanes ----
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(128, 128), snowGround);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    worldAdd(ground);
+
+    // Packed cross-lanes running from the tower plaza out to each lodge.
+    groundRect(0, 0, 9, 120, snowPath, 0.025);
+    groundRect(0, 0, 120, 9, snowPath, 0.025);
+    groundRect(0, 0, 15, 15, stonePath, 0.028);          // stone plaza ring under the tower
+    groundRect(-20, -20, 5, 46, icePath, 0.03);
+    groundRect(20, 20, 46, 5, icePath, 0.03);
+
+    // Frozen ponds tucked into the open quadrants between the lanes and the houses.
+    groundRect(20, -20, 15, 11, pondColor, 0.032);
+    groundRect(-20, 20, 15, 11, pondColor, 0.032);
+
+    // Perimeter snow ridge.
+    addWall(0, -61, 124, 3, 1.4, 0, stoneMat);
+    addWall(0, 61, 124, 3, 1.4, 0, stoneMat);
+    addWall(-61, 0, 1.4, 3, 124, 0, stoneMat);
+    addWall(61, 0, 1.4, 3, 124, 0, stoneMat);
+
+    // Scattered low cover — snowed-over crates/boulders — out in the open field.
+    [[-14, -6], [14, 6], [-6, 14], [6, -14], [46, -8], [-46, 8], [8, 46], [-8, -46]].forEach(([x, z]) => {
+      addWall(x, z, 2.6, 1.3, 2.2, 0, stoneMat);
+      addTrim(x, z, 2.8, 0.2, 2.4, 1.3, snowRoof);   // snow cap on top of the cover
+    });
+
+    function addPineTree(x, z, scale) {
+      scale = scale || 1;
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.13 * scale, 0.17 * scale, 1.0 * scale, 7), trunkMat);
+      trunk.position.set(x, 0.5 * scale, z); trunk.castShadow = true; worldAdd(trunk);
+      const tiers = [[1.35, 1.5, 0], [1.05, 1.3, 0.95], [0.7, 1.0, 1.75]];
+      tiers.forEach(([r, h, dy], i) => {
+        const cone = new THREE.Mesh(new THREE.ConeGeometry(r * scale, h * scale, 8),
+          i === tiers.length - 1 ? pineSnow : pineDark);
+        cone.position.set(x, (1.0 + dy + h / 2) * scale, z);
+        cone.castShadow = true; cone.receiveShadow = true;
+        worldAdd(cone);
+      });
+    }
+    // A loose treeline framing the village and softening the perimeter.
+    [[-46,-46],[46,-46],[-46,46],[46,46],[-50,0],[50,0],[0,-50],[0,50],
+     [-40,-14],[40,14],[-14,40],[14,-40],[-52,-24],[52,24],[-24,52],[24,-52]]
+      .forEach(([x, z], i) => addPineTree(x, z, 0.85 + (i % 3) * 0.18));
+
+    function addLampPost(x, z) {
+      addTrim(x, z, 0.12, 2.6, 0.12, 0, logWallDark);
+      addTrim(x, z, 0.5, 0.08, 0.5, 2.5, logWallDark);
+      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), lanternMat);
+      lamp.position.set(x, 2.35, z); worldAdd(lamp);
+    }
+    [[4.5, -12], [-4.5, 12], [12, 4.5], [-12, -4.5]].forEach(([x, z]) => addLampPost(x, z));
+
+    // ---- Wooden bridge: raised log-and-plank walkway linking the tower to a lodge ----
+    function buildWoodBridge(axis, a1, a2, fixed, level) {
+      const W = 4.0, HW = W / 2, RAIL_H = 1.1;
+      const isX = axis === 'x';
+      const bx1 = isX ? a1 : fixed - HW, bx2 = isX ? a2 : fixed + HW;
+      const bz1 = isX ? fixed - HW : a1, bz2 = isX ? fixed + HW : a2;
+
+      const deck = addFloorSlab(bx1, bx2, bz1, bz2, level, woodFloorMat);
+      if (deck) deck.receiveShadow = true;
+
+      // Support posts rising from the snow to the underside of the deck, one pair per rail.
+      if (isX) {
+        for (let x = a1 + 3; x < a2; x += 6) {
+          addTrim(x, fixed - HW + 0.15, 0.28, level, 0.28, 0, logWallDark);
+          addTrim(x, fixed + HW - 0.15, 0.28, level, 0.28, 0, logWallDark);
+        }
+      } else {
+        for (let z = a1 + 3; z < a2; z += 6) {
+          addTrim(fixed - HW + 0.15, z, 0.28, level, 0.28, 0, logWallDark);
+          addTrim(fixed + HW - 0.15, z, 0.28, level, 0.28, 0, logWallDark);
+        }
+      }
+
+      // Log handrails, chest-high, with a snow-capped top rail.
+      const noShadow = m => { if (m) m.castShadow = false; return m; };
+      if (isX) {
+        noShadow(addWall((a1 + a2) / 2, fixed - HW, a2 - a1, RAIL_H, 0.16, level, logWallDark));
+        noShadow(addWall((a1 + a2) / 2, fixed + HW, a2 - a1, RAIL_H, 0.16, level, logWallDark));
+        addTrim((a1 + a2) / 2, fixed - HW, a2 - a1, 0.12, 0.22, level + RAIL_H, snowRoof);
+        addTrim((a1 + a2) / 2, fixed + HW, a2 - a1, 0.12, 0.22, level + RAIL_H, snowRoof);
+      } else {
+        noShadow(addWall(fixed - HW, (a1 + a2) / 2, 0.16, RAIL_H, a2 - a1, level, logWallDark));
+        noShadow(addWall(fixed + HW, (a1 + a2) / 2, 0.16, RAIL_H, a2 - a1, level, logWallDark));
+        addTrim(fixed - HW, (a1 + a2) / 2, 0.22, 0.12, a2 - a1, level + RAIL_H, snowRoof);
+        addTrim(fixed + HW, (a1 + a2) / 2, 0.22, 0.12, a2 - a1, level + RAIL_H, snowRoof);
+      }
+    }
+
+    // ---- Two-storey lodge: ground floor + loft, linked to the tower by a bridge on
+    // `innerSide` (which also carries the ground-floor door beneath the bridge). ----
+    function buildLodge(cx, cz, half, innerSide, roofMat) {
+      const WT = 0.4, FH = 3.0, ROOFY = FH * 2;
+      const x1 = cx - half, x2 = cx + half, z1 = cz - half, z2 = cz + half;
+      const DOORW = 2.4, BRW = 4.2;
+      const centre = (innerSide === 'n' || innerSide === 's') ? cx : cz;
+      const gapsFor = (side, level) => {
+        if (side !== innerSide) return [];
+        return level === 0 ? [[centre - DOORW / 2, centre + DOORW / 2]] : [[centre - BRW / 2, centre + BRW / 2]];
+      };
+
+      groundRect(cx, cz, half * 2 + 1.4, half * 2 + 1.4, stonePath, 0.03);
+
+      for (let lvl = 0; lvl < 2; lvl++) {
+        const y = lvl * FH, bandH = 1.3, winH = 1.3, lintel = FH - bandH - winH;
+        wallAlongX(x1, x2, z1, WT, y, bandH, gapsFor('n', lvl), logWallLight);
+        wallAlongX(x1, x2, z2, WT, y, bandH, gapsFor('s', lvl), logWallLight);
+        wallAlongZ(z1, z2, x1, WT, y, bandH, gapsFor('w', lvl), logWallLight);
+        wallAlongZ(z1, z2, x2, WT, y, bandH, gapsFor('e', lvl), logWallLight);
+
+        const cut = side => gapsFor(side, lvl).length > 0;
+        const WOPT = { winW: 1.6, pierW: 1.2 };
+        if (!cut('n')) addFacadeWindows('x', x1, x2, z1, WT, y + bandH, winH, logWallLight, WOPT);
+        else wallAlongX(x1, x2, z1, WT, y + bandH, winH, gapsFor('n', lvl), logWallLight);
+        if (!cut('s')) addFacadeWindows('x', x1, x2, z2, WT, y + bandH, winH, logWallLight, WOPT);
+        else wallAlongX(x1, x2, z2, WT, y + bandH, winH, gapsFor('s', lvl), logWallLight);
+        if (!cut('w')) addFacadeWindows('z', z1, z2, x1, WT, y + bandH, winH, logWallLight, WOPT);
+        else wallAlongZ(z1, z2, x1, WT, y + bandH, winH, gapsFor('w', lvl), logWallLight);
+        if (!cut('e')) addFacadeWindows('z', z1, z2, x2, WT, y + bandH, winH, logWallLight, WOPT);
+        else wallAlongZ(z1, z2, x2, WT, y + bandH, winH, gapsFor('e', lvl), logWallLight);
+
+        wallAlongX(x1, x2, z1, WT, y + bandH + winH, lintel, [], logWallLight);
+        wallAlongX(x1, x2, z2, WT, y + bandH + winH, lintel, [], logWallLight);
+        wallAlongZ(z1, z2, x1, WT, y + bandH + winH, lintel, [], logWallLight);
+        wallAlongZ(z1, z2, x2, WT, y + bandH + winH, lintel, [], logWallLight);
+      }
+
+      // Loft floor with a stair hole tucked in the corner farthest from the bridge side.
+      const SL = 3.4, SW = 2.0;
+      const ix1 = x1 + WT / 2, ix2 = x2 - WT / 2, iz1 = z1 + WT / 2, iz2 = z2 - WT / 2;
+      const sx1 = innerSide === 'w' ? ix2 - SL : ix1;
+      const sz1 = innerSide === 'n' ? iz2 - SW : iz1;
+      const sx2 = sx1 + SL, sz2 = sz1 + SW;
+      addFloorSlab(ix1, sx1, iz1, iz2, FH, woodFloorMat);
+      addFloorSlab(sx2, ix2, iz1, iz2, FH, woodFloorMat);
+      addFloorSlab(sx1, sx2, iz1, sz1, FH, woodFloorMat);
+      addFloorSlab(sx1, sx2, sz2, iz2, FH, woodFloorMat);
+      addRamp(sx1, sx2, sz1, sz2, 0, FH, 'x', logWallDark);
+
+      // Snow-capped gable roof over the loft, ridge running perpendicular to the bridge.
+      const ridgeAxis = (innerSide === 'n' || innerSide === 's') ? 'z' : 'x';
+      addGableRoof(cx, cz, half * 2, half * 2, 2.6, ROOFY, roofMat, ridgeAxis, 0.75);
+      addGableRoof(cx, cz, half * 2 - 0.5, half * 2 - 0.5, 2.35, ROOFY + 0.28, snowRoof, ridgeAxis, 0.55);
+      addTrim(cx - half * 0.4, cz + half * 0.3, 0.5, 2.1, 0.5, ROOFY, logWallDark);   // chimney
+      addTrim(cx - half * 0.4, cz + half * 0.3, 0.62, 0.18, 0.62, ROOFY + 2.1, stoneMat);
+    }
+
+    // ---- Single-storey village house tucked into a corner, no bridge ----
+    function buildHouse(cx, cz, half, doorSide, roofMat) {
+      const WT = 0.4, FH = 3.2;
+      const x1 = cx - half, x2 = cx + half, z1 = cz - half, z2 = cz + half;
+      const DOORW = 2.2;
+      const centre = (doorSide === 'n' || doorSide === 's') ? cx : cz;
+      const gap = side => side === doorSide ? [[centre - DOORW / 2, centre + DOORW / 2]] : [];
+      const bandH = 1.2, winH = 1.3, lintel = FH - bandH - winH;
+      const WOPT = { winW: 1.5, pierW: 1.1 };
+
+      groundRect(cx, cz, half * 2 + 1.2, half * 2 + 1.2, stonePath, 0.03);
+
+      wallAlongX(x1, x2, z1, WT, 0, bandH, gap('n'), logWallLight);
+      wallAlongX(x1, x2, z2, WT, 0, bandH, gap('s'), logWallLight);
+      wallAlongZ(z1, z2, x1, WT, 0, bandH, gap('w'), logWallLight);
+      wallAlongZ(z1, z2, x2, WT, 0, bandH, gap('e'), logWallLight);
+
+      const cut = s => gap(s).length > 0;
+      if (!cut('n')) addFacadeWindows('x', x1, x2, z1, WT, bandH, winH, logWallLight, WOPT);
+      else wallAlongX(x1, x2, z1, WT, bandH, winH, gap('n'), logWallLight);
+      if (!cut('s')) addFacadeWindows('x', x1, x2, z2, WT, bandH, winH, logWallLight, WOPT);
+      else wallAlongX(x1, x2, z2, WT, bandH, winH, gap('s'), logWallLight);
+      if (!cut('w')) addFacadeWindows('z', z1, z2, x1, WT, bandH, winH, logWallLight, WOPT);
+      else wallAlongZ(z1, z2, x1, WT, bandH, winH, gap('w'), logWallLight);
+      if (!cut('e')) addFacadeWindows('z', z1, z2, x2, WT, bandH, winH, logWallLight, WOPT);
+      else wallAlongZ(z1, z2, x2, WT, bandH, winH, gap('e'), logWallLight);
+
+      wallAlongX(x1, x2, z1, WT, bandH + winH, lintel, [], logWallLight);
+      wallAlongX(x1, x2, z2, WT, bandH + winH, lintel, [], logWallLight);
+      wallAlongZ(z1, z2, x1, WT, bandH + winH, lintel, [], logWallLight);
+      wallAlongZ(z1, z2, x2, WT, bandH + winH, lintel, [], logWallLight);
+
+      const ridgeAxis = (doorSide === 'n' || doorSide === 's') ? 'x' : 'z';
+      addGableRoof(cx, cz, half * 2, half * 2, 2.1, FH, roofMat, ridgeAxis, 0.6);
+      addGableRoof(cx, cz, half * 2 - 0.4, half * 2 - 0.4, 1.9, FH + 0.26, snowRoof, ridgeAxis, 0.42);
+      addTrim(cx + half * 0.5, cz - half * 0.3, 0.45, 1.7, 0.45, FH, logWallDark);   // chimney
+    }
+
+    // ==== Central watchtower ====
+    const TH = 5, TWT = 0.4, TFH = 3.0, ROOF = TFH * 2;
+    const tx1 = -TH, tx2 = TH, tz1 = -TH, tz2 = TH;
+    const itx1 = tx1 + TWT / 2, itx2 = tx2 - TWT / 2, itz1 = tz1 + TWT / 2, itz2 = tz2 - TWT / 2;
+    const DOORW = 2.6, BRW = 4.2;
+
+    // Ground floor: solid stone base, single door facing the spawn (south).
+    wallAlongX(tx1, tx2, tz1, TWT, 0, TFH, [], stoneMat);
+    wallAlongX(tx1, tx2, tz2, TWT, 0, TFH, [[-DOORW / 2, DOORW / 2]], stoneMat);
+    wallAlongZ(tz1, tz2, tx1, TWT, 0, TFH, [], stoneMat);
+    wallAlongZ(tz1, tz2, tx2, TWT, 0, TFH, [], stoneMat);
+
+    // Upper floor: four bridge openings, one to each lodge.
+    wallAlongX(tx1, tx2, tz1, TWT, TFH, TFH, [[-BRW / 2, BRW / 2]], stoneMat);
+    wallAlongX(tx1, tx2, tz2, TWT, TFH, TFH, [[-BRW / 2, BRW / 2]], stoneMat);
+    wallAlongZ(tz1, tz2, tx1, TWT, TFH, TFH, [[-BRW / 2, BRW / 2]], stoneMat);
+    wallAlongZ(tz1, tz2, tx2, TWT, TFH, TFH, [[-BRW / 2, BRW / 2]], stoneMat);
+
+    // Two stair flights, opposite corners, ground -> floor 1 -> open roof deck.
+    const SL = 5.2, SW = 2.4;
+    [{ x1: itx1, z1: itz2 - SW, from: 0, to: TFH },
+     { x1: itx2 - SL, z1: itz1, from: TFH, to: ROOF }].forEach(f => {
+      const fx2 = f.x1 + SL, fz2 = f.z1 + SW;
+      const roofLevel = f.to === ROOF;
+      const b = roofLevel ? { x1: tx1, x2: tx2, z1: tz1, z2: tz2 } : { x1: itx1, x2: itx2, z1: itz1, z2: itz2 };
+      const mat = roofLevel ? stoneMat : woodFloorMat;
+      addFloorSlab(b.x1, f.x1, b.z1, b.z2, f.to, mat);
+      addFloorSlab(fx2, b.x2, b.z1, b.z2, f.to, mat);
+      addFloorSlab(f.x1, fx2, b.z1, f.z1, f.to, mat);
+      addFloorSlab(f.x1, fx2, fz2, b.z2, f.to, mat);
+      addRamp(f.x1, fx2, f.z1, fz2, f.from, f.to, 'x', logWallDark);
+    });
+
+    // Roof-deck parapet — a proper lookout you can shoot from on every side.
+    addWall(0, tz1 - 0.2, TH * 2 + 0.6, 1.1, 0.25, ROOF, stoneMat);
+    addWall(0, tz2 + 0.2, TH * 2 + 0.6, 1.1, 0.25, ROOF, stoneMat);
+    addWall(tx1 - 0.2, 0, 0.25, 1.1, TH * 2 + 0.6, ROOF, stoneMat);
+    addWall(tx2 + 0.2, 0, 0.25, 1.1, TH * 2 + 0.6, ROOF, stoneMat);
+
+    // Cupola posts + a snow-capped pyramid cap sheltering the deck (visual, walk-under).
+    const postH = 2.2;
+    [[-TH + 0.6, -TH + 0.6], [TH - 0.6, -TH + 0.6], [-TH + 0.6, TH - 0.6], [TH - 0.6, TH - 0.6]].forEach(([x, z]) => {
+      addTrim(x, z, 0.3, postH, 0.3, ROOF, logWallDark);
+    });
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(TH * 1.55, 3.0, 4), towerCapMat);
+    cap.rotation.y = Math.PI / 4; cap.position.set(0, ROOF + postH + 1.5, 0);
+    cap.castShadow = true; worldAdd(cap);
+    const snowTip = new THREE.Mesh(new THREE.ConeGeometry(0.55, 0.9, 4), snowRoof);
+    snowTip.rotation.y = Math.PI / 4; snowTip.position.set(0, ROOF + postH + 3.0 + 0.35, 0);
+    worldAdd(snowTip);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.0, 6), logWallDark);
+    pole.position.set(0, ROOF + postH + 3.0 + 0.7 + 1.0, 0);
+    pole.castShadow = true; worldAdd(pole);
+
+    // ==== Four lodges, each linked to the tower by a wooden bridge at floor-1 height ====
+    const cabHalf = 6, cabCentre = 34;
+    buildLodge(0, -cabCentre, cabHalf, 's', roofRed);   // north lodge
+    buildLodge(0, cabCentre, cabHalf, 'n', roofBlue);   // south lodge
+    buildLodge(cabCentre, 0, cabHalf, 'w', roofBlue);   // east lodge
+    buildLodge(-cabCentre, 0, cabHalf, 'e', roofRed);   // west lodge
+
+    buildWoodBridge('z', -(cabCentre - cabHalf), -TH, 0, TFH);   // tower <-> north lodge
+    buildWoodBridge('z', TH, cabCentre - cabHalf, 0, TFH);       // tower <-> south lodge
+    buildWoodBridge('x', TH, cabCentre - cabHalf, 0, TFH);       // tower <-> east lodge
+    buildWoodBridge('x', -(cabCentre - cabHalf), -TH, 0, TFH);   // tower <-> west lodge
+
+    // ==== Four smaller village houses filling the corners ====
+    buildHouse(-30, -30, 5, 's', roofBlue);
+    buildHouse(30, -30, 5, 's', roofRed);
+    buildHouse(-30, 30, 5, 'n', roofRed);
+    buildHouse(30, 30, 5, 'n', roofBlue);
+
+    // Single-player targets use the shared helper; multiplayer suppresses them centrally.
+    buildDummy(0, -12, 0, 0xb5432f, 0x7a2c1f);
+    buildDummy(0, 12, Math.PI, 0x3f7ab5, 0x27506f);
+    buildDummy(-30, -30, Math.PI / 4, 0xb5432f, 0x7a2c1f);
+    buildDummy(30, 30, -Math.PI * 0.75, 0x3f7ab5, 0x27506f);
+    buildDummy(0, -cabCentre + 3, Math.PI, 0xb5432f, 0x7a2c1f);
+    buildDummy(0, cabCentre - 3, 0, 0x3f7ab5, 0x27506f);
+  }
+
+  defineMap({
+    id: 'frostline',
+    name: 'Frostline',
+    blurb: 'A snow-bound mountain village: a central watchtower keeps watch over log-cabin lodges, linked by raised wooden bridges, with smaller houses tucked in the corners.',
+    halfSize: 62,
+    spawn: { x: 0, z: 50, yaw: Math.PI },
+    atmosphere: {
+      sky: 0xb9d1df, fog: 0xa9c3d2, fogNear: 30, fogFar: 145,
+      hemiSky: 0xd9efff, hemiGround: 0x71818b, hemiIntensity: 1.05,
+      sunColor: 0xfff0d8, sunIntensity: 0.75, sunPos: [-35, 65, 25]
+    },
+    rain: { count: 7000, speed: 7, streak: 0.16, wind: 0.09, color: 0xffffff, opacity: 0.78 },
+    build() { buildFrostline(); }
+  });
+
+  function buildSkybridge() {
+    const B = 62;                                  // half-extent
+    const FH = 3.6;                                // storey height -> floors at 0 / 3.6 / 7.2
+    const ROOF = FH * 3;                           // 10.8, roof deck level
+    const WT = 0.4;                                // wall thickness
+    const HALF = 14;                               // tower half-footprint (28 x 28 towers)
+    const CENTRES = [[-24, -24], [24, -24], [-24, 24], [24, 24]];
+
+    // Wet, overcast-toned materials (map-local: disposed when the map unloads)
+    const wetGround = new THREE.MeshStandardMaterial({ color: 0x2b3137, roughness: 0.28, metalness: 0.55 });
+    const puddleMat = new THREE.MeshStandardMaterial({ color: 0x1b2228, roughness: 0.06, metalness: 0.9 });
+    const concreteMat = new THREE.MeshStandardMaterial({ color: 0x6d7580, roughness: 0.55, metalness: 0.25 });
+    const concreteDark = new THREE.MeshStandardMaterial({ color: 0x4a525c, roughness: 0.5, metalness: 0.3 });
+    const deckMat = new THREE.MeshStandardMaterial({ color: 0x5d646d, roughness: 0.45, metalness: 0.3 });
+    const steelMat = new THREE.MeshStandardMaterial({ color: 0x333a42, roughness: 0.35, metalness: 0.75 });
+    const bridgeGlass = new THREE.MeshStandardMaterial({
+      color: 0x9fd8e8, roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.3,
+      side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1
+    });
+    const railGlass = new THREE.MeshStandardMaterial({
+      color: 0xb2e2ef, roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.26,
+      side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1
+    });
+    const crateMat = new THREE.MeshStandardMaterial({ color: 0x4d5a45, roughness: 0.6, metalness: 0.2 });
+
+    // ---- Ground plane, wet markings, puddles ----
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(B * 2 + 30, B * 2 + 30), wetGround);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    worldAdd(ground);
+
+    // Plaza paving between the towers + service lanes around the outside
+    // Keep decorative paving below tower floors so overlapping footprints cannot flicker.
+    groundRect(0, 0, 40, 40, 0x3a424a, 0.01);
+    groundRect(0, 0, 26, 26, 0x434c55, 0.015);
+    [[-24, 0], [24, 0]].forEach(([x, z]) => groundRect(x, z, 7, B * 2, 0x262c32, 0.012));
+    [[0, -24], [0, 24]].forEach(([x, z]) => groundRect(x, z, B * 2, 7, 0x262c32, 0.012));
+
+    // Puddles — low roughness so the overcast sky glints off them
+    const puddles = [[-6, 8, 5, 3.4], [9, -4, 4, 2.6], [-14, -16, 6, 3], [17, 14, 5.5, 3.6],
+                     [0, 26, 7, 3], [-30, 4, 4.5, 3], [33, -10, 5, 3.2], [2, -33, 6, 3.4]];
+    puddles.forEach(([x, z, w, d]) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), puddleMat);
+      m.rotation.x = -Math.PI / 2;
+      m.position.set(x, 0.06, z);
+      worldAdd(m);
+    });
+
+    // ---- Perimeter ----
+    addWall(0, -B, B * 2, 6, 2, 0, concreteDark);
+    addWall(0, B, B * 2, 6, 2, 0, concreteDark);
+    addWall(-B, 0, 2, 6, B * 2, 0, concreteDark);
+    addWall(B, 0, 2, 6, B * 2, 0, concreteDark);
+
+    // ---- Tower builder ----
+    // doors: which sides get a ground-floor opening. bridges: [side, level] openings to cut.
+    function buildTower(cx, cz, doors, bridgeCuts, label) {
+      const x1 = cx - HALF, x2 = cx + HALF, z1 = cz - HALF, z2 = cz + HALF;
+      const WIN_OPTS = { winW: 3.4, pierW: 1.3 };   // fewer, wider openings: big towers, sane mesh count
+      const ix1 = x1 + WT / 2, ix2 = x2 - WT / 2, iz1 = z1 + WT / 2, iz2 = z2 - WT / 2;
+      const DOOR = 3.0, BR_W = 5.0;
+
+      // Ground slab inside
+      const gf = new THREE.Mesh(new THREE.PlaneGeometry(HALF * 2 - WT, HALF * 2 - WT), deckMat);
+      gf.rotation.x = -Math.PI / 2; gf.position.set(cx, 0.03, cz); gf.receiveShadow = true;
+      worldAdd(gf);
+
+      // Gaps for this storey on a given side: ground doors + any bridge openings
+      const gapsFor = (side, level) => {
+        const g = [];
+        const centre = (side === 'n' || side === 's') ? cx : cz;
+        if (level === 0 && doors.indexOf(side) >= 0) g.push([centre - DOOR / 2, centre + DOOR / 2]);
+        bridgeCuts.forEach(bc => {
+          if (bc[0] === side && bc[1] === level) g.push([centre - BR_W / 2, centre + BR_W / 2]);
+        });
+        return g;
+      };
+
+      for (let lvl = 0; lvl < 3; lvl++) {
+        const y = lvl * FH;
+        // Solid wall band, then a window ribbon above it, then a lintel band
+        const bandH = 1.3, winH = 1.5, lintel = FH - bandH - winH;   // 1.3 > jump apex (1.23m)
+        wallAlongX(x1, x2, z1, WT, y, bandH, gapsFor('n', lvl), concreteMat);
+        wallAlongX(x1, x2, z2, WT, y, bandH, gapsFor('s', lvl), concreteMat);
+        wallAlongZ(z1, z2, x1, WT, y, bandH, gapsFor('w', lvl), concreteMat);
+        wallAlongZ(z1, z2, x2, WT, y, bandH, gapsFor('e', lvl), concreteMat);
+
+        // Window ribbons — skipped where a bridge or door opening passes through
+        const cut = (side) => gapsFor(side, lvl).length > 0;
+        if (!cut('n')) addFacadeWindows('x', x1, x2, z1, WT, y + bandH, winH, concreteMat, WIN_OPTS);
+        else { wallAlongX(x1, x2, z1, WT, y + bandH, winH, gapsFor('n', lvl), concreteMat); }
+        if (!cut('s')) addFacadeWindows('x', x1, x2, z2, WT, y + bandH, winH, concreteMat, WIN_OPTS);
+        else { wallAlongX(x1, x2, z2, WT, y + bandH, winH, gapsFor('s', lvl), concreteMat); }
+        if (!cut('w')) addFacadeWindows('z', z1, z2, x1, WT, y + bandH, winH, concreteMat, WIN_OPTS);
+        else { wallAlongZ(z1, z2, x1, WT, y + bandH, winH, gapsFor('w', lvl), concreteMat); }
+        if (!cut('e')) addFacadeWindows('z', z1, z2, x2, WT, y + bandH, winH, concreteMat, WIN_OPTS);
+        else { wallAlongZ(z1, z2, x2, WT, y + bandH, winH, gapsFor('e', lvl), concreteMat); }
+
+        wallAlongX(x1, x2, z1, WT, y + bandH + winH, lintel, [], concreteMat);
+        wallAlongX(x1, x2, z2, WT, y + bandH + winH, lintel, [], concreteMat);
+        wallAlongZ(z1, z2, x1, WT, y + bandH + winH, lintel, [], concreteMat);
+        wallAlongZ(z1, z2, x2, WT, y + bandH + winH, lintel, [], concreteMat);
+
+        // Floor-line cornice
+        addTrim(cx, z1, HALF * 2 + 0.2, 0.14, WT + 0.2, y + FH - 0.14, concreteDark);
+        addTrim(cx, z2, HALF * 2 + 0.2, 0.14, WT + 0.2, y + FH - 0.14, concreteDark);
+        addTrim(x1, cz, WT + 0.2, 0.14, HALF * 2 + 0.2, y + FH - 0.14, concreteDark);
+        addTrim(x2, cz, WT + 0.2, 0.14, HALF * 2 + 0.2, y + FH - 0.14, concreteDark);
+      }
+
+      // ---- Stairs: a different corner on every flight, so climbing crosses the floor ----
+      // Each flight sits in a different part of the floor plate, so climbing a tower means
+      // crossing it. Every flight ends with slab in front of it to step onto (never a wall).
+      const SL = 6.0, SW = 2.8;
+      const flights = [
+        { x1: ix1,      z1: iz1,      from: 0,      to: FH },       // north-west bay
+        { x1: cx + 1,   z1: iz2 - SW, from: FH,     to: FH * 2 },   // south, mid-plate
+        { x1: ix1,      z1: iz2 - SW, from: FH * 2, to: ROOF }      // south-west bay
+      ];
+      flights.forEach(f => {
+        const fx2 = f.x1 + SL, fz2 = f.z1 + SW;
+        // The roof deck runs out to the outer wall face so there is no gap at the parapet;
+        // interior floors stop at the inner wall face as usual.
+        const roofLevel = f.to === ROOF;
+        const b = roofLevel ? { x1: x1, x2: x2, z1: z1, z2: z2 }
+                            : { x1: ix1, x2: ix2, z1: iz1, z2: iz2 };
+        // Slab for the level this flight arrives at, with a hole exactly matching the flight
+        addFloorSlab(b.x1, f.x1, b.z1, b.z2, f.to, roofLevel ? concreteMat : deckMat);
+        addFloorSlab(fx2, b.x2, b.z1, b.z2, f.to, roofLevel ? concreteMat : deckMat);
+        addFloorSlab(f.x1, fx2, b.z1, f.z1, f.to, roofLevel ? concreteMat : deckMat);
+        addFloorSlab(f.x1, fx2, fz2, b.z2, f.to, roofLevel ? concreteMat : deckMat);
+        addRamp(f.x1, fx2, f.z1, fz2, f.from, f.to, 'x', concreteDark);
+      });
+
+      // ---- Roof: parapet you can actually use as cover, plus plant ----
+      addWall(cx, z1 - 0.2, HALF * 2 + 0.6, 1.3, 0.25, ROOF, concreteDark);
+      addWall(cx, z2 + 0.2, HALF * 2 + 0.6, 1.3, 0.25, ROOF, concreteDark);
+      addWall(x1 - 0.2, cz, 0.25, 1.3, HALF * 2 + 0.6, ROOF, concreteDark);
+      addWall(x2 + 0.2, cz, 0.25, 1.3, HALF * 2 + 0.6, ROOF, concreteDark);
+
+      const ac1 = addWall(cx - 5, cz - 5, 3.2, 1.4, 2.4, ROOF, steelMat); ac1.receiveShadow = true;
+      addWall(cx + 5.5, cz + 4, 2.4, 1.1, 2.4, ROOF, steelMat);
+      const vent = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 1.6, 12), steelMat);
+      vent.position.set(cx + 5, ROOF + 0.8, cz - 6);
+      vent.castShadow = true; worldAdd(vent);
+
+      // Interior cover on the upper floors so the rooms aren't empty boxes
+      addWall(cx - 4, cz + 2, 3.0, 1.1, 0.5, FH, concreteDark);
+      addWall(cx + 4, cz - 3, 0.5, 1.1, 3.0, FH, concreteDark);
+      addWall(cx - 3, cz - 4, 0.5, 1.2, 3.4, FH * 2, concreteDark);
+      addWall(cx + 3.5, cz + 3.5, 3.4, 1.2, 0.5, FH * 2, concreteDark);
+      // Ground-floor pillars / crates
+      addWall(cx - 6, cz - 6, 1.0, FH, 1.0, 0, concreteDark);
+      addWall(cx + 6, cz + 6, 1.0, FH, 1.0, 0, concreteDark);
+    }
+
+    // ---- Glass bridge builder ----
+    // Deck is glass you can see through (and through to the plaza below); the side panels
+    // are chest-high so you can still shoot over them while being unable to fall off.
+    function buildBridge(axis, a1, a2, fixed, level) {
+      const W = 5.0, HW = W / 2, RAIL_H = 1.3;   // above jump apex: no accidental falls
+      const isX = axis === 'x';
+      // Extend just past the tower's inner floor edge so the deck meets it without
+      // overlapping a coplanar floor surface, which would cause visual flicker.
+      const OVER = 0;
+      const d1 = a1 - OVER, d2 = a2 + OVER;
+      const bx1 = isX ? d1 : fixed - HW, bx2 = isX ? d2 : fixed + HW;
+      const bz1 = isX ? fixed - HW : d1, bz2 = isX ? fixed + HW : d2;
+
+      // Walkable glass deck (real collision floor + bullet blocker)
+      const deck = addFloorSlab(bx1, bx2, bz1, bz2, level, bridgeGlass);
+      if (deck) deck.castShadow = false;       // transparent glass shouldn't cast a solid shadow
+
+      // Structural frame under the deck
+      const beam = (x, z, w, d) => addTrim(x, z, w, 0.22, d, level - SLAB_T - 0.23, steelMat);
+      if (isX) {
+        beam((a1 + a2) / 2, fixed - HW + 0.15, a2 - a1, 0.3);
+        beam((a1 + a2) / 2, fixed + HW - 0.15, a2 - a1, 0.3);
+        for (let x = a1 + 2.5; x < a2; x += 5) beam(x, fixed, 0.25, W - 0.4);
+      } else {
+        beam(fixed - HW + 0.15, (a1 + a2) / 2, 0.3, a2 - a1);
+        beam(fixed + HW - 0.15, (a1 + a2) / 2, 0.3, a2 - a1);
+        for (let z = a1 + 2.5; z < a2; z += 5) beam(fixed, z, W - 0.4, 0.25);
+      }
+
+      // Glass side panels (colliders, so no falling off) + steel handrail on top
+      const noShadow = m => { if (m) m.castShadow = false; return m; };
+      if (isX) {
+        noShadow(addWall((a1 + a2) / 2, fixed - HW, a2 - a1, RAIL_H, 0.1, level, railGlass));
+        noShadow(addWall((a1 + a2) / 2, fixed + HW, a2 - a1, RAIL_H, 0.1, level, railGlass));
+        addTrim((a1 + a2) / 2, fixed - HW, a2 - a1, 0.12, 0.22, level + RAIL_H, steelMat);
+        addTrim((a1 + a2) / 2, fixed + HW, a2 - a1, 0.12, 0.22, level + RAIL_H, steelMat);
+        for (let x = a1; x <= a2; x += 5) {
+          addTrim(x, fixed - HW, 0.14, RAIL_H, 0.16, level, steelMat);
+          addTrim(x, fixed + HW, 0.14, RAIL_H, 0.16, level, steelMat);
+        }
+      } else {
+        noShadow(addWall(fixed - HW, (a1 + a2) / 2, 0.1, RAIL_H, a2 - a1, level, railGlass));
+        noShadow(addWall(fixed + HW, (a1 + a2) / 2, 0.1, RAIL_H, a2 - a1, level, railGlass));
+        addTrim(fixed - HW, (a1 + a2) / 2, 0.22, 0.12, a2 - a1, level + RAIL_H, steelMat);
+        addTrim(fixed + HW, (a1 + a2) / 2, 0.22, 0.12, a2 - a1, level + RAIL_H, steelMat);
+        for (let z = a1; z <= a2; z += 5) {
+          addTrim(fixed - HW, z, 0.16, RAIL_H, 0.14, level, steelMat);
+          addTrim(fixed + HW, z, 0.16, RAIL_H, 0.14, level, steelMat);
+        }
+      }
+    }
+
+    // ---- The four towers ----
+    // bridgeCuts open a doorway in the facade exactly where a bridge lands.
+    buildTower(-24, -24, ['s', 'e'], [['e', 1], ['s', 2]]);   // NW
+    buildTower( 24, -24, ['s', 'w'], [['w', 1], ['s', 1]]);   // NE
+    buildTower(-24,  24, ['n', 'e'], [['n', 2], ['e', 2]]);   // SW
+    buildTower( 24,  24, ['n', 'w'], [['n', 1], ['w', 2]]);   // SE
+
+    // ---- The four glass bridges ----
+    // North pair and east pair at floor 2; south pair and west pair at floor 3, so crossing
+    // the map diagonally means changing storey at least once.
+    buildBridge('x', -10,  10, -24, FH);          // NW <-> NE, floor 2
+    buildBridge('z', -10,  10,  24, FH);          // NE <-> SE, floor 2
+    buildBridge('x', -10,  10,  24, FH * 2);      // SW <-> SE, floor 3
+    buildBridge('z', -10,  10, -24, FH * 2);      // NW <-> SW, floor 3
+
+    // ---- Central plaza: raised platform with two ramps, cover underneath ----
+    const PLAT = 6.5, PLAT_H = FH;
+    addWall(-PLAT, -PLAT, 1.2, PLAT_H, 1.2, 0, steelMat);
+    addWall( PLAT, -PLAT, 1.2, PLAT_H, 1.2, 0, steelMat);
+    addWall(-PLAT,  PLAT, 1.2, PLAT_H, 1.2, 0, steelMat);
+    addWall( PLAT,  PLAT, 1.2, PLAT_H, 1.2, 0, steelMat);
+    const PE = PLAT + 0.6;
+    addFloorSlab(-PE, PE, -PE, PE, PLAT_H, deckMat);
+    // Ramps climb from the plaza floor UP onto the deck: one from the west, one from the
+    // north, each landing flush on the deck edge. Those two edges stay open; the other
+    // two get glass parapets.
+    addRamp(-PE - 7.6, -PE, -1.6, 1.6, 0, PLAT_H, 'x', concreteDark);
+    addRamp(-1.6, 1.6, -PE - 7.6, -PE, 0, PLAT_H, 'z', concreteDark);
+    addWall(0,  PE, PE * 2, 0.95, 0.15, PLAT_H, railGlass).castShadow = false;
+    addWall(PE, 0, 0.15, 0.95, PE * 2, PLAT_H, railGlass).castShadow = false;
+
+    // ---- Scattered cover in the plaza and the outer ring ----
+    const crates = [[-14, 6, 2.2, 1.8], [15, -8, 2.4, 2.0], [-9, -13, 2.0, 1.6], [11, 13, 2.6, 1.4],
+                    [-38, 8, 2.4, 2.0], [40, -6, 2.2, 1.8], [6, -42, 2.6, 2.0], [-5, 43, 2.4, 1.8],
+                    [-45, -30, 3.0, 2.2], [46, 32, 3.0, 2.2]];
+    crates.forEach(([x, z, sz, h]) => addWall(x, z, sz, h, sz, 0, crateMat));
+
+    // Low concrete barriers guiding movement through the plaza
+    [[-18, 0, 0.6, 7], [18, 0, 0.6, 7], [0, -18, 7, 0.6], [0, 18, 7, 0.6]].forEach(([x, z, w, d]) =>
+      addWall(x, z, w, 1.1, d, 0, concreteDark));
+
+    // ---- Dummies spread across storeys so every route has something to shoot ----
+    buildDummy(0, 20, Math.PI, 0xb5432f, 0x7a2c1f);              // plaza
+    buildDummy(-12, -6, -Math.PI / 4, 0x3f7ab5, 0x27506f);       // plaza, west side
+    buildDummy(-24, -20, 0, 0xb5432f, 0x7a2c1f);                 // NW tower, ground floor
+    buildDummy(24, 26, Math.PI, 0x3f7ab5, 0x27506f);             // SE tower, ground floor
+    buildDummy(28, -24, -Math.PI / 2, 0xb5432f, 0x7a2c1f);       // NE tower, ground floor
+    buildDummy(-26, 22, Math.PI / 2, 0x3f7ab5, 0x27506f);        // SW tower, ground floor
+  }
+
+  // ---------- Loading / unloading ----------
+  function unloadWorld() {
+    // Drop transient effects that point at the outgoing world
+    tracers.forEach(t => { scene.remove(t.line); t.line.geometry.dispose(); t.line.material.dispose(); });
+    tracers.length = 0;
+    impactSparks.forEach(sp => { scene.remove(sp.mesh); sp.mesh.geometry.dispose(); sp.mesh.material.dispose(); });
+    impactSparks.length = 0;
+    damageNumbers.forEach(d => { scene.remove(d.spr); d.mat.dispose(); d.tex.dispose(); });
+    damageNumbers.length = 0;
+    stopRain();
+
+    world.traverse(o => {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) {
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        mats.forEach(m => { if (m && !sharedMaterials.has(m)) m.dispose(); });
+      }
+    });
+    while (world.children.length) world.remove(world.children[0]);
+
+    // Same arrays the physics and shooting systems read — emptied, never replaced
+    colliders.length = 0; floors.length = 0; ramps.length = 0;
+    solidMeshes.length = 0; targets.length = 0; healthBars.length = 0;
+  }
+
+  function loadMap(id) {
+    const def = MapRegistry[id] || MapRegistry[mapOrder[0]];
+    unloadWorld();
+    currentMapId = def.id;
+    mapBounds = def.halfSize;
+    applyAtmosphere(def.atmosphere);
+    def.build();
+    if (def.rain) startRain(def.rain);
+    respawnPlayer();
+    if (menuView) { applyAerialCamera(); }      // re-frame: maps differ in size
+    updateHUD(); updateHealthHUD();
+    if (typeof refreshMapUI === 'function' && mapListEl) refreshMapUI();
+  }
+
+  function respawnPlayer() {
+    const sp = (MapRegistry[currentMapId] || {}).spawn || { x: 0, z: 14, yaw: 0 };
+    playerPos.set(sp.x, 0, sp.z);
+    feetY = getGroundHeight(sp.x, sp.z, 2);
+    vy = 0; grounded = true; crouching = false; eyeHeight = 1.6; lean = 0;
+    yaw = sp.yaw || 0; pitch = 0; recoilPitch = 0; recoilYaw = 0;
+    velocity.set(0, 0, 0);
+    if (!menuView) camera.position.set(sp.x, feetY + eyeHeight, sp.z);
+    playerBody.position.set(sp.x, feetY, sp.z);
+  }
+
+  // ---------- Weapons ----------
+  const weapons = {
+    rifle:  { name: 'AR-9', auto: true,  magSize: 30, fireRate: 0.09, reloadTime: 1.6, spread: 0.008,  recoil: 0.010, range: 80,  aimFov: 55, damage: 14,  headMult: 2.0, moveSway: 1.0, aimSway: 0.40 },
+    pistol: { name: 'P-12', auto: false, magSize: 12, fireRate: 0.18, reloadTime: 1.0, spread: 0.002,  recoil: 0.022, range: 60,  aimFov: 60, damage: 18,  headMult: 2.2, moveSway: 0.8, aimSway: 0.50 },
+    sniper: { name: 'SR-1', auto: false, magSize: 5,  fireRate: 1.2,  reloadTime: 2.2, spread: 0.0005, recoil: 0.06,  range: 200, aimFov: 18, damage: 100, headMult: 1.5, moveSway: 3.5, aimSway: 0.12, hipSpreadMult: 130 },
+    // Pump shotgun: one trigger pull launches `pellets` separate raycasts, each carrying
+    // its own share of `damage`, spread within a wide cone (`spread`) that the shared
+    // accuracy model (currentSpreadRad) also drives the crosshair ring from — so the
+    // reticle you see is the actual cone the pellets are drawn from. Short `range` plus
+    // `falloff` in fire() means it hits hard up close and drops off fast at distance.
+    shotgun:{ name: 'SG-8', auto: false, magSize: 6,  fireRate: 0.85, reloadTime: 2.6, spread: 0.05,   recoil: 0.05,  range: 26,  aimFov: 65, damage: 9,   headMult: 1.8, moveSway: 1.3, aimSway: 0.55, pellets: 9 }
+  };
+  const weaponKeys = ['rifle', 'pistol', 'sniper', 'shotgun'];
+
+  // Shared accuracy model: crosshair display and actual fired spread both come from
+  // this, so the reticle genuinely reflects the shot. moveSway/aimSway per weapon
+  // (see weapons table) make the sniper's accuracy collapse hardest while moving.
+  // hipSpreadMult (sniper only) blows the reticle open when not aiming down the scope —
+  // a sniper rifle fired from the hip is genuinely inaccurate, and the crosshair now
+  // shows that clearly instead of looking deceptively tight.
+  function currentSpreadRad(key, moveMag, aimingNow, heat) {
+    const wpn = weapons[key];
+    const aimF = aimingNow ? wpn.aimSway : 1;
+    const sway = moveMag * wpn.moveSway * aimF * 0.0016;
+    const stanceMult = aimingNow ? 0.3 : (wpn.hipSpreadMult || 1);
+    const base = wpn.spread * (0.4 + heat * 3) * stanceMult;
+    return base + sway;
+  }
+
+  let currentWeapon = 'rifle';
+  let ammo = { rifle: 30, pistol: 12, sniper: 5, shotgun: 6 };
+  let reloading = false, reloadTimer = 0, fireCooldown = 0, spreadHeat = 0;
+  let aiming = false;
+
+  const gun = new THREE.Group();
+  const muzzleLight = new THREE.PointLight(0x00ffff, 0, 12);
+  gun.add(muzzleLight);
+
+  const AIM_POS = new THREE.Vector3(0, -0.16, -0.38);
+  let hipPos = new THREE.Vector3(0.28, -0.28, -0.55);
+
+  function buildGun(kind) {
+    while (gun.children.length) gun.remove(gun.children[0]);
+    gun.add(muzzleLight);
+    const glow = new THREE.MeshStandardMaterial({ color: 0x00ffee, emissive: 0x00ffee, emissiveIntensity: 0.7 });
+
+    if (kind === 'rifle') {
+      const olive = new THREE.MeshStandardMaterial({ color: 0x4a5a3a, roughness: 0.4, metalness: 0.6 });
+      const dark = new THREE.MeshStandardMaterial({ color: 0x20242a, roughness: 0.5, metalness: 0.6 });
+      const recv = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.13, 0.42), olive); recv.position.set(0, 0, -0.02);
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.44, 10), dark); barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.04, -0.42);
+      const hand = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.1, 0.3), olive); hand.position.set(0, -0.02, -0.3);
+      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.12, 0.3), dark); stock.position.set(0, -0.03, 0.28);
+      const mag = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.2, 0.08), dark); mag.position.set(0, -0.18, 0.02); mag.rotation.x = 0.2;
+      const sight = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.06, 0.03), glow); sight.position.set(0, 0.1, -0.12);
+      const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.07, 10), glow); muzzle.rotation.x = Math.PI / 2; muzzle.position.set(0, 0.04, -0.66);
+      gun.add(recv, barrel, hand, stock, mag, sight, muzzle);
+      hipPos.set(0.28, -0.28, -0.55);
+      muzzleLight.position.set(0, 0.04, -0.7);
+    } else if (kind === 'pistol') {
+      const steel = new THREE.MeshStandardMaterial({ color: 0x2b2f36, roughness: 0.35, metalness: 0.7 });
+      const dark = new THREE.MeshStandardMaterial({ color: 0x15171c, roughness: 0.5, metalness: 0.6 });
+      const slide = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.1, 0.3), steel); slide.position.set(0, 0.03, -0.05);
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.16, 8), dark); barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.04, -0.26);
+      const grip = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.24, 0.1), dark); grip.position.set(0, -0.16, 0.08); grip.rotation.x = 0.35;
+      const guard = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.012, 8, 12), dark); guard.position.set(0, -0.06, 0.02); guard.rotation.x = Math.PI / 2;
+      const sight = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.04, 0.02), glow); sight.position.set(0, 0.09, 0.08);
+      gun.add(slide, barrel, grip, guard, sight);
+      hipPos.set(0.26, -0.3, -0.5);
+      muzzleLight.position.set(0, 0.04, -0.34);
+    } else if (kind === 'shotgun') {
+      const wood = new THREE.MeshStandardMaterial({ color: 0x5c3a21, roughness: 0.65, metalness: 0.05 });
+      const steel = new THREE.MeshStandardMaterial({ color: 0x2a2d33, roughness: 0.35, metalness: 0.75 });
+      const recv = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.12, 0.28), steel); recv.position.set(0, 0, -0.02);
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.034, 0.62, 10), steel); barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.045, -0.5);
+      const magTube = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.5, 10), steel); magTube.rotation.x = Math.PI / 2; magTube.position.set(0, -0.02, -0.42);
+      const pump = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.075, 0.16), wood); pump.position.set(0, -0.025, -0.34);
+      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.15, 0.34), wood); stock.position.set(0, -0.03, 0.28);
+      const sight = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.05, 0.02), glow); sight.position.set(0, 0.1, -0.72);
+      const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.06, 10), glow); muzzle.rotation.x = Math.PI / 2; muzzle.position.set(0, 0.045, -0.82);
+      gun.add(recv, barrel, magTube, pump, stock, sight, muzzle);
+      hipPos.set(0.27, -0.3, -0.5);
+      muzzleLight.position.set(0, 0.045, -0.86);
+    } else {
+      // Sniper
+      const dark = new THREE.MeshStandardMaterial({ color: 0x1c2026, roughness: 0.4, metalness: 0.65 });
+      const grey = new THREE.MeshStandardMaterial({ color: 0x3a4048, roughness: 0.4, metalness: 0.6 });
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.13, 0.5), grey); body.position.set(0, 0, -0.05);
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.72, 10), dark); barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.04, -0.56);
+      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.12, 0.32), dark); stock.position.set(0, -0.03, 0.3);
+      const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.3, 12), dark); scope.rotation.x = Math.PI / 2; scope.position.set(0, 0.13, -0.12);
+      const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.03, 12), glow); lens.rotation.x = Math.PI / 2; lens.position.set(0, 0.13, -0.28);
+      const bolt = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.12, 8), dark); bolt.rotation.z = Math.PI / 2; bolt.position.set(0.06, 0.01, 0.05);
+      const mag = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.07), dark); mag.position.set(0, -0.14, 0.02);
+      const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.08, 10), glow); muzzle.rotation.x = Math.PI / 2; muzzle.position.set(0, 0.04, -0.94);
+      gun.add(body, barrel, stock, scope, lens, bolt, mag, muzzle);
+      hipPos.set(0.26, -0.28, -0.6);
+      muzzleLight.position.set(0, 0.04, -0.98);
+    }
+    gun.position.copy(hipPos);
+  }
+  buildGun('rifle');
+  camera.add(gun);
+  scene.add(camera);
+
+  // ---------- Player character model ----------
+  // One factory builds both the local player's visible body and every remote player's
+  // third-person model, so networked players look exactly like the existing character
+  // and animate with the same limb rig.
+  const skinMat  = new THREE.MeshStandardMaterial({ color: 0xcf9d78, roughness: 0.85 });
+  const bootMat  = new THREE.MeshStandardMaterial({ color: 0x1b1b1b, roughness: 0.75, metalness: 0.2 });
+
+  function makeLimb(mat, len, rad) {
+    const g = new THREE.Group();
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(rad, rad * 0.9, len, 8), mat);
+    m.position.y = -len / 2; m.castShadow = true;
+    g.add(m);
+    return g;
+  }
+
+  /**
+   * opts.suit / opts.dark  — body colours (remote players get per-player colours)
+   * opts.head             — add a head sphere. Off for the local body, which would
+   *                         otherwise sit inside the first-person camera.
+   * opts.gun              — add a simple third-person weapon prop in the right hand.
+   */
+  function createCharacter(opts) {
+    opts = opts || {};
+    const suit = new THREE.MeshStandardMaterial({ color: opts.suit != null ? opts.suit : 0x33402f, roughness: 0.75, metalness: 0.1 });
+    const dark = new THREE.MeshStandardMaterial({ color: opts.dark != null ? opts.dark : 0x232b1f, roughness: 0.8, metalness: 0.1 });
+
+    const group = new THREE.Group();
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.62, 0.28), suit);
+    torso.position.set(0, 1.02, 0); torso.castShadow = true;
+    const hips = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.24, 0.26), dark);
+    hips.position.set(0, 0.66, 0); hips.castShadow = true;
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.1, 0.12, 8), skinMat);
+    neck.position.set(0, 1.36, 0); neck.castShadow = true;
+
+    const legL = makeLimb(dark, 0.78, 0.11); legL.position.set(-0.13, 0.78, 0);
+    const legR = makeLimb(dark, 0.78, 0.11); legR.position.set(0.13, 0.78, 0);
+    const bootL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, 0.3), bootMat); bootL.position.set(0, -0.78, 0.05); bootL.castShadow = true; legL.add(bootL);
+    const bootR = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, 0.3), bootMat); bootR.position.set(0, -0.78, 0.05); bootR.castShadow = true; legR.add(bootR);
+    const armL = makeLimb(suit, 0.6, 0.085); armL.position.set(-0.33, 1.32, 0); armL.rotation.x = -0.12;
+    const armR = makeLimb(suit, 0.6, 0.085); armR.position.set(0.33, 1.32, 0); armR.rotation.x = -0.12;
+    const handL = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), skinMat); handL.position.y = -0.6; handL.castShadow = true; armL.children[0].add(handL);
+    const handR = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), skinMat); handR.position.y = -0.6; handR.castShadow = true; armR.children[0].add(handR);
+
+    group.add(hips, torso, neck, legL, legR, armL, armR);
+
+    let head = null, gunProp = null;
+    const hitParts = [torso, hips, legL.children[0], legR.children[0], armL.children[0], armR.children[0]];
+    if (opts.head !== false) {
+      head = new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 9), skinMat);
+      head.position.set(0, 1.56, 0); head.castShadow = true;
+      head.userData.part = 'head';
+      group.add(head);
+      hitParts.push(head);
+    }
+    if (opts.gun) {
+      gunProp = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.12, 0.5), new THREE.MeshStandardMaterial({ color: 0x23282e, roughness: 0.45, metalness: 0.6 }));
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.3, 8), new THREE.MeshStandardMaterial({ color: 0x15181c, roughness: 0.4, metalness: 0.7 }));
+      barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.03, -0.38);
+      gunProp.add(body, barrel);
+      gunProp.position.set(0.3, 1.16, -0.22);
+      gunProp.children.forEach(m => { m.castShadow = true; });
+      group.add(gunProp);
+    }
+
+    group.castShadow = true;
+    return { group, torso, hips, neck, head, legL, legR, armL, armR, gunProp,
+             hitParts, materials: [suit, dark] };
+  }
+
+  const localChar = createCharacter({ head: false });
+  const playerBody = localChar.group;
+  const legL = localChar.legL, legR = localChar.legR;
+  const armL = localChar.armL, armR = localChar.armR;
+  scene.add(playerBody);
+
+  // ---------- State ----------
+  let gameOver = false, started = false, paused = false;
+  let yaw = 0, pitch = 0, recoilPitch = 0, recoilYaw = 0;
+  let feetY = 0, vy = 0, grounded = true;
+  let crouching = false, eyeHeight = 1.6;
+  let aimAmount = 0;
+  let lean = 0;
+  const velocity = new THREE.Vector3();
+  const playerPos = new THREE.Vector3(0, 0, 14);
+  const keys = {};
+  const tracers = [];
+  const damageNumbers = [];
+  const raycaster = new THREE.Raycaster();
+  let pointerLocked = false;
+  let mouseX = 0, mouseY = 0;
+  const MAX_LOOK_DELTA = 120;
+
+  // ---------- Audio ----------
+  let audioCtx = null;
+  function ensureAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+  function tone(type, f0, f1, dur, vol) {
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime;
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(audioCtx.destination); o.start(t); o.stop(t + dur);
+  }
+  const sShoot = () => tone('square', 200, 45, 0.1, 0.22);
+  const sShotgun = () => { tone('sawtooth', 140, 35, 0.16, 0.3); tone('square', 90, 30, 0.2, 0.18); };
+  const sReload = () => tone('square', 300, 200, 0.06, 0.15);
+  const sHit = () => tone('sine', 950, 400, 0.09, 0.2);
+  const sHurt = () => tone('sawtooth', 320, 90, 0.16, 0.22);
+
+  // ---------- HUD ----------
+  const ammoEl = document.getElementById('ammo');
+  const weaponEl = document.getElementById('weapon');
+  const crosshairEl = document.getElementById('crosshair');
+  const chDot = document.getElementById('ch-dot');
+  const chRing = document.getElementById('ch-ring');
+  const chPelletsWrap = document.getElementById('ch-pellets');
+  // Small reusable pool of dots that flash at each pellet's real fired offset, so the
+  // shotgun's spread pattern is shown, not just implied by a static reticle shape.
+  const MAX_PELLET_DOTS = 12;
+  const pelletDots = [];
+  for (let i = 0; i < MAX_PELLET_DOTS; i++) {
+    const d = document.createElement('div');
+    d.className = 'ch-pellet';
+    chPelletsWrap.appendChild(d);
+    pelletDots.push({ el: d, life: 0 });
+  }
+  function flashPelletCrosshair(offsets) {
+    const scale = 2200; // matches the scale updateCrosshair uses to turn spread radians into pixels
+    offsets.forEach((o, i) => {
+      if (i >= pelletDots.length) return;
+      const pd = pelletDots[i];
+      pd.life = 0.22;
+      pd.el.style.left = (o.x * scale) + 'px';
+      pd.el.style.top = (o.y * scale) + 'px';
+      pd.el.style.opacity = '1';
+    });
+  }
+  function updatePelletDots(dt) {
+    for (const pd of pelletDots) {
+      if (pd.life <= 0) continue;
+      pd.life -= dt;
+      pd.el.style.opacity = pd.life <= 0 ? '0' : String(Math.max(0, pd.life / 0.22));
+    }
+  }
+  const scopeEl = document.getElementById('scope');
+  const clT = document.getElementById('cl-t');
+  const clB = document.getElementById('cl-b');
+  const clL = document.getElementById('cl-l');
+  const clR = document.getElementById('cl-r');
+  const healthBarFg = document.getElementById('healthBarFg');
+  const healthText = document.getElementById('healthText');
+  function updateHUD() {
+    weaponEl.textContent = weapons[currentWeapon].name;
+    ammoEl.textContent = reloading ? 'Reloading...' : (ammo[currentWeapon] + '/' + weapons[currentWeapon].magSize);
+  }
+  function updateHealthHUD() {
+    const frac = Math.max(0, player.health / player.maxHealth);
+    healthBarFg.style.width = (frac * 100) + '%';
+    healthText.textContent = Math.round(player.health) + ' / ' + player.maxHealth;
+  }
+  function updateCrosshair(gap) {
+    // Shotgun gets an open ring sized to the real pellet-spread radius (same `gap`
+    // value the other weapons' cross reticle uses) instead of a cross — a ring reads
+    // as "this whole circle is where your shot is going" the way a cross doesn't.
+    if (currentWeapon === 'shotgun') {
+      clT.style.display = clB.style.display = clL.style.display = clR.style.display = 'none';
+      chRing.style.display = 'block';
+      const d = Math.max(6, gap * 2);
+      chRing.style.width = d + 'px'; chRing.style.height = d + 'px';
+      return;
+    }
+    chRing.style.display = 'none';
+    const L = 8, th = 2;
+    clT.style.display = clB.style.display = clL.style.display = clR.style.display = 'block';
+    clT.style.left = (-th / 2) + 'px'; clT.style.top = (-gap - L) + 'px';
+    clT.style.width = th + 'px'; clT.style.height = L + 'px';
+    clB.style.left = (-th / 2) + 'px'; clB.style.top = gap + 'px';
+    clB.style.width = th + 'px'; clB.style.height = L + 'px';
+    clL.style.top = (-th / 2) + 'px'; clL.style.left = (-gap - L) + 'px';
+    clL.style.width = L + 'px'; clL.style.height = th + 'px';
+    clR.style.top = (-th / 2) + 'px'; clR.style.left = gap + 'px';
+    clR.style.width = L + 'px'; clR.style.height = th + 'px';
+  }
+  let hitMarkerT = 0;
+  function showHitMarker() {
+    hitMarkerT = 0.12;
+    chDot.style.background = '#ff3b30';
+    chDot.style.boxShadow = '0 0 6px #ff3b30';
+    chDot.style.transform = 'translate(-50%, -50%) scale(1.8)';
+  }
+  const impactSparks = [];
+  function spawnDamageNumber(pos, dmg, isHead) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128; canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    ctx.font = 'bold 40px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+    ctx.fillStyle = isHead ? '#ffdd33' : '#ffffff';
+    const text = String(Math.round(dmg)) + (isHead ? '!' : '');
+    ctx.strokeText(text, 64, 32);
+    ctx.fillText(text, 64, 32);
+    const tex = new THREE.CanvasTexture(canvas);
+    const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
+    const spr = new THREE.Sprite(mat);
+    spr.scale.set(0.55, 0.28, 1);
+    spr.position.copy(pos); spr.position.y += 0.15;
+    spr.renderOrder = 1000;
+    scene.add(spr);
+    damageNumbers.push({ spr, mat, tex, life: 0.7 });
+  }
+  function updateHealthBar(target) {
+    const frac = Math.max(0, target.health / target.maxHealth);
+    const hb = target.hb;
+    hb.fg.scale.x = Math.max(0.001, frac);
+    hb.fg.position.x = -hb.halfW * (1 - frac);
+    hb.fg.material.color.setHex(frac > 0.5 ? 0x2ee06a : frac > 0.25 ? 0xe0c62e : 0xe0402e);
+  }
+  function registerHit(target, point, hitMesh, dmgMult) {
+    const wpn = weapons[currentWeapon];
+    const isHead = hitMesh.userData.part === 'head';
+    const dmg = wpn.damage * (isHead ? wpn.headMult : 1) * (dmgMult != null ? dmgMult : 1);
+    target.health = Math.max(0, target.health - dmg);
+    target.lastDamageT = clock.elapsedTime;
+    target.flashT = 0.15;
+    target.materials.forEach(m => { m.emissive.setHex(0xff2a1a); m.emissiveIntensity = 1.3; });
+    updateHealthBar(target);
+    spawnDamageNumber(point, dmg, isHead);
+    const spark = new THREE.Mesh(new THREE.SphereGeometry(0.045, 6, 6), new THREE.MeshBasicMaterial({ color: 0xffdd88 }));
+    spark.position.copy(point);
+    scene.add(spark);
+    impactSparks.push({ mesh: spark, life: 0.12 });
+    showHitMarker();
+    sHit();
+  }
+  // Bullet stopped on a wall/floor/prop rather than a target — visual feedback only, no damage.
+  function spawnWallSpark(point) {
+    const spark = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 6), new THREE.MeshBasicMaterial({ color: 0xdadfe3 }));
+    spark.position.copy(point);
+    scene.add(spark);
+    impactSparks.push({ mesh: spark, life: 0.12 });
+  }
+
+  // ---------- Vertical / collision ----------
+  function getGroundHeight(x, z, y) {
+    let best = 0;
+    for (const f of floors) {
+      if (x >= f.x - f.w / 2 && x <= f.x + f.w / 2 && z >= f.z - f.d / 2 && z <= f.z + f.d / 2) {
+        if (f.height <= y + 0.6) best = Math.max(best, f.height);
+      }
+    }
+    for (const r of ramps) {
+      if (x >= r.x1 && x <= r.x2 && z >= r.z1 && z <= r.z2) {
+        const t = THREE.MathUtils.clamp(r.axis === 'x' ? (x - r.x1) / (r.x2 - r.x1) : (z - r.z1) / (r.z2 - r.z1), 0, 1);
+        const h = r.from + (r.to - r.from) * t;
+        if (h <= y + 0.6) best = Math.max(best, h);
+      }
+    }
+    return best;
+  }
+  function getCeilingHeight(x, z, y) {
+    let best = Infinity;
+    for (const f of floors) {
+      if (x >= f.x - f.w / 2 && x <= f.x + f.w / 2 && z >= f.z - f.d / 2 && z <= f.z + f.d / 2) {
+        if (f.height > y + 0.1) best = Math.min(best, f.height - SLAB_T);
+      }
+    }
+    // The stairs are a solid wedge (see addRamp) — anywhere under the sloped tread the
+    // player's head must be blocked from jumping up into it, the same as a floor slab.
+    for (const r of ramps) {
+      if (x >= r.x1 && x <= r.x2 && z >= r.z1 && z <= r.z2) {
+        const t = THREE.MathUtils.clamp(r.axis === 'x' ? (x - r.x1) / (r.x2 - r.x1) : (z - r.z1) / (r.z2 - r.z1), 0, 1);
+        const h = r.from + (r.to - r.from) * t;
+        if (h > y + 0.1) best = Math.min(best, h);
+      }
+    }
+    return best;
+  }
+  function collide(pos, r, feetYv, bodyH) {
+    for (const o of colliders) {
+      if (feetYv < o.yMax && feetYv + bodyH > o.yMin) {
+        const cx = Math.max(o.x - o.w / 2, Math.min(pos.x, o.x + o.w / 2));
+        const cz = Math.max(o.z - o.d / 2, Math.min(pos.z, o.z + o.d / 2));
+        const dx = pos.x - cx, dz = pos.z - cz;
+        const d2 = dx * dx + dz * dz;
+        if (d2 < r * r) {
+          const d = Math.sqrt(d2) || 0.0001;
+          pos.x = cx + (dx / d) * r;
+          pos.z = cz + (dz / d) * r;
+        }
+      }
+    }
+    pos.x = THREE.MathUtils.clamp(pos.x, -mapBounds + 1, mapBounds - 1);
+    pos.z = THREE.MathUtils.clamp(pos.z, -mapBounds + 1, mapBounds - 1);
+  }
+
+  // ---------- Shooting ----------
+  function fire() {
+    const w = weapons[currentWeapon];
+    if (w.pellets) { fireShotgun(w); return; }
+    if (ammo[currentWeapon] <= 0) { reload(); return; }
+    ammo[currentWeapon]--;
+    fireCooldown = w.fireRate;
+    spreadHeat = Math.min(1, spreadHeat + 0.18);
+    updateHUD(); sShoot();
+    recoilPitch += w.recoil;
+    recoilYaw += (Math.random() - 0.5) * w.recoil * 0.6;
+    gun.position.z = hipPos.z + 0.07;
+    setTimeout(() => { gun.position.z = hipPos.z; }, 50);
+    muzzleLight.intensity = 3;
+    setTimeout(() => { muzzleLight.intensity = 0; }, 40);
+
+    const spread = currentSpreadRad(currentWeapon, velocity.length(), aiming, spreadHeat);
+    const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    dir.x += (Math.random() - 0.5) * spread;
+    dir.y += (Math.random() - 0.5) * spread;
+    dir.z += (Math.random() - 0.5) * spread;
+    dir.normalize();
+
+    const origin = camera.position.clone();
+    let end = origin.clone().add(dir.clone().multiplyScalar(w.range));
+
+    raycaster.set(origin, dir);
+    raycaster.far = w.range;
+    raycaster.near = 0;
+    // Single-player casts at dummies; multiplayer casts at remote player models. Both
+    // use the same raycast against the same world geometry, so walls block shots either way.
+    const targetMeshes = isMP()
+      ? remoteHitMeshes()
+      : targets.reduce((acc, t) => acc.concat(t.meshes), []);
+    // Cast against targets AND solid geometry together so intersectObjects' distance-sorted
+    // result tells us what the bullet actually reaches first — a wall/floor/prop in front of
+    // a target now stops the shot there instead of letting it pass through.
+    const hits = raycaster.intersectObjects(targetMeshes.concat(solidMeshes), false);
+    let netClaim = null;
+    if (hits.length) {
+      end = hits[0].point;
+      const ud = hits[0].object.userData;
+      if (isMP() && ud.netId != null) {
+        // We do NOT apply damage here. We report what our raycast saw; the server
+        // re-validates it and decides the damage from its own weapon table.
+        netClaim = { id: ud.netId, part: ud.part === 'head' ? 'head' : 'body',
+                     point: [+end.x.toFixed(2), +end.y.toFixed(2), +end.z.toFixed(2)] };
+      } else if (!isMP() && ud.target) {
+        registerHit(ud.target, hits[0].point, hits[0].object);
+      } else {
+        spawnWallSpark(hits[0].point);
+      }
+    }
+
+    if (isMP() && Net) {
+      Net.sendShot({
+        weapon: currentWeapon,
+        origin: [+origin.x.toFixed(2), +origin.y.toFixed(2), +origin.z.toFixed(2)],
+        dir: [+dir.x.toFixed(4), +dir.y.toFixed(4), +dir.z.toFixed(4)],
+        end: [+end.x.toFixed(2), +end.y.toFixed(2), +end.z.toFixed(2)],
+        hit: netClaim
+      });
+    }
+
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([origin, end]),
+      new THREE.LineBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.7 }));
+    scene.add(line);
+    tracers.push({ line, life: 0.07 });
+  }
+
+  // One trigger pull = one shell = `w.pellets` independent raycasts, each drawn from the
+  // same currentSpreadRad() cone that drives the ring crosshair, so the reticle always
+  // shows the true spread this shell will fire into. Damage per pellet falls off with
+  // distance (a shotgun's defining trait) and only one shell is spent regardless of how
+  // many pellets connect.
+  function fireShotgun(w) {
+    if (ammo[currentWeapon] <= 0) { reload(); return; }
+    ammo[currentWeapon]--;
+    fireCooldown = w.fireRate;
+    spreadHeat = Math.min(1, spreadHeat + 0.5);
+    updateHUD(); sShotgun();
+    recoilPitch += w.recoil;
+    recoilYaw += (Math.random() - 0.5) * w.recoil * 0.6;
+    gun.position.z = hipPos.z + 0.12;
+    setTimeout(() => { gun.position.z = hipPos.z; }, 90);
+    muzzleLight.intensity = 4;
+    setTimeout(() => { muzzleLight.intensity = 0; }, 45);
+
+    const origin = camera.position.clone();
+    const targetMeshes = isMP()
+      ? remoteHitMeshes()
+      : targets.reduce((acc, t) => acc.concat(t.meshes), []);
+    const flashOffsets = [];
+    const netPellets = [];
+
+    for (let p = 0; p < w.pellets; p++) {
+      const spread = currentSpreadRad(currentWeapon, velocity.length(), aiming, spreadHeat);
+      const offX = (Math.random() - 0.5) * spread;
+      const offY = (Math.random() - 0.5) * spread;
+      const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+      dir.x += offX;
+      dir.y += offY;
+      dir.z += (Math.random() - 0.5) * spread;
+      dir.normalize();
+
+      let end = origin.clone().add(dir.clone().multiplyScalar(w.range));
+      raycaster.set(origin, dir);
+      raycaster.far = w.range;
+      raycaster.near = 0;
+      const hits = raycaster.intersectObjects(targetMeshes.concat(solidMeshes), false);
+      let netClaim = null;
+      if (hits.length) {
+        end = hits[0].point;
+        const ud = hits[0].object.userData;
+        // Buckshot hits hardest point-blank and drops off fast — never below 40% of a
+        // pellet's base damage even at max range.
+        const falloff = THREE.MathUtils.clamp(1 - (hits[0].distance / w.range) * 0.6, 0.4, 1);
+        if (isMP() && ud.netId != null) {
+          netClaim = { id: ud.netId, part: ud.part === 'head' ? 'head' : 'body',
+                       point: [+end.x.toFixed(2), +end.y.toFixed(2), +end.z.toFixed(2)] };
+        } else if (!isMP() && ud.target) {
+          registerHit(ud.target, hits[0].point, hits[0].object, falloff);
+        } else {
+          spawnWallSpark(hits[0].point);
+        }
+      }
+
+      if (isMP() && Net) {
+        netPellets.push({
+          dir: [+dir.x.toFixed(4), +dir.y.toFixed(4), +dir.z.toFixed(4)],
+          end: [+end.x.toFixed(2), +end.y.toFixed(2), +end.z.toFixed(2)],
+          hit: netClaim
+        });
+      }
+
+      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([origin, end]),
+        new THREE.LineBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.4 }));
+      scene.add(line);
+      tracers.push({ line, life: 0.07 });
+      flashOffsets.push({ x: offX, y: offY });
+    }
+
+    // The whole shell goes out as ONE message carrying every pellet. Sending nine
+    // separate Net.sendShot calls would each hit the server's per-shot rate limit
+    // (see handleShot in server.js) and only the first would ever be accepted —
+    // which is exactly why damage wasn't registering before this fix.
+    if (isMP() && Net) {
+      Net.sendShot({
+        weapon: currentWeapon,
+        origin: [+origin.x.toFixed(2), +origin.y.toFixed(2), +origin.z.toFixed(2)],
+        pellets: netPellets
+      });
+    }
+
+    flashPelletCrosshair(flashOffsets);
+  }
+
+  function reload() {
+    if (reloading || ammo[currentWeapon] >= weapons[currentWeapon].magSize) return;
+    reloading = true; reloadTimer = weapons[currentWeapon].reloadTime; sReload(); updateHUD();
+    if (isMP() && Net) Net.sendReload(true);
+  }
+  function switchWeapon(kind) {
+    if (kind === currentWeapon || reloading) return;
+    currentWeapon = kind; buildGun(kind); updateHUD();
+    if (isMP() && Net) Net.sendWeapon(kind);
+  }
+
+  // ---------- Main loop ----------
+  const clock = new THREE.Clock();
+  const GRAVITY = 20, JUMP = 7;
+
+  function animate() {
+    requestAnimationFrame(animate);
+    const dt = Math.min(clock.getDelta(), 0.05);
+    const t = clock.elapsedTime;
+
+    // An eliminated multiplayer player keeps rendering but stops playing: no movement,
+    // no shooting, no interaction, until the server respawns them.
+    if (started && !gameOver && !paused && !mp.dead) {
+      const bodyH = crouching ? 1.0 : 1.7;
+
+      crouching = keys['KeyC'] || keys['ControlLeft'] || keys['ControlRight'];
+      const targetEye = crouching ? 0.85 : 1.6;
+      eyeHeight += (targetEye - eyeHeight) * Math.min(1, dt * 12);
+
+      // Aiming
+      const targetAim = aiming ? 1 : 0;
+      aimAmount += (targetAim - aimAmount) * Math.min(1, dt * 14);
+      const targetFov = aiming ? weapons[currentWeapon].aimFov : 75;
+      camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 14);
+      camera.updateProjectionMatrix();
+
+      // Scope overlay
+      const scoped = aiming && currentWeapon === 'sniper';
+      scopeEl.style.display = scoped ? 'block' : 'none';
+      crosshairEl.style.display = scoped ? 'none' : 'block';
+      gun.visible = !scoped; // hide the gun model so the scope view is clear
+
+      // Reload
+      if (reloading) {
+        reloadTimer -= dt;
+        const prog = 1 - reloadTimer / weapons[currentWeapon].reloadTime;
+        gun.position.y = hipPos.y - Math.sin(Math.PI * prog) * 0.25;
+        gun.rotation.x = Math.sin(Math.PI * prog) * 0.8;
+        if (reloadTimer <= 0) {
+          reloading = false;
+          ammo[currentWeapon] = weapons[currentWeapon].magSize;
+          gun.rotation.x = 0;
+          updateHUD();
+          if (isMP() && Net) Net.sendReload(false);
+        }
+      }
+
+      if (fireCooldown > 0) fireCooldown -= dt;
+      spreadHeat = Math.max(0, spreadHeat - dt * 1.6);
+      if (keys['Mouse0'] && !reloading && fireCooldown <= 0) {
+        fire();
+        if (!weapons[currentWeapon].auto) keys['Mouse0'] = false;
+      }
+
+      // Horizontal movement
+      const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+      const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+      const move = new THREE.Vector3();
+      if (keys['KeyW']) move.add(forward);
+      if (keys['KeyS']) move.sub(forward);
+      if (keys['KeyD']) move.add(right);
+      if (keys['KeyA']) move.sub(right);
+      if (move.lengthSq() > 0) move.normalize();
+      let speed = crouching ? 3 : ((keys['ShiftLeft'] || keys['ShiftRight']) ? 9 : 5.5);
+      if (aiming) speed *= 0.55;
+      velocity.lerp(move.multiplyScalar(speed), 1 - Math.pow(0.0001, dt));
+      playerPos.x += velocity.x * dt;
+      playerPos.z += velocity.z * dt;
+
+      // Vertical
+      if (grounded) {
+        const g = getGroundHeight(playerPos.x, playerPos.z, feetY);
+        if (g >= feetY - 0.5) {
+          feetY = g; vy = 0;
+          if (keys['Space']) { vy = JUMP; grounded = false; }
+        } else grounded = false;
+      }
+      if (!grounded) {
+        vy -= GRAVITY * dt;
+        feetY += vy * dt;
+        const g = getGroundHeight(playerPos.x, playerPos.z, feetY);
+        if (vy <= 0 && feetY <= g) { feetY = g; vy = 0; grounded = true; }
+        const ceil = getCeilingHeight(playerPos.x, playerPos.z, feetY);
+        if (feetY + bodyH > ceil) { feetY = ceil - bodyH; if (vy > 0) vy = 0; }
+      }
+
+      collide(playerPos, 0.5, feetY, bodyH);
+
+      // Peeking (lean) — only while aiming
+      const leanTarget = aiming ? ((keys['KeyQ'] ? -1 : 0) + (keys['KeyE'] ? 1 : 0)) : 0;
+      lean += (leanTarget - lean) * Math.min(1, dt * 10);
+      const leanAngle = lean * 0.22;
+
+      // Camera position: pivot at the feet (tilt from the bottom)
+      camera.position.x = playerPos.x + right.x * eyeHeight * Math.sin(leanAngle);
+      camera.position.z = playerPos.z + right.z * eyeHeight * Math.sin(leanAngle);
+      camera.position.y = feetY + eyeHeight * Math.cos(leanAngle);
+
+      // Player body follows the feet, faces the yaw (not pitch), crouches, and walk-cycles
+      playerBody.position.set(playerPos.x, feetY, playerPos.z);
+      playerBody.rotation.y = yaw;
+      playerBody.scale.y = crouching ? 0.6 : 1;
+      const moveSpeed = velocity.length();
+      const walking = moveSpeed > 0.3 && grounded;
+      const cycle = walking ? t * (crouching ? 7 : 11) : 0;
+      const swing = walking ? Math.sin(cycle) * 0.55 : 0;
+      legL.rotation.x = swing; legR.rotation.x = -swing;
+      armL.rotation.x = -0.12 + (walking ? -swing * 0.6 : 0);
+      armR.rotation.x = -0.12 + (walking ? swing * 0.6 : 0);
+
+      // Gun position (hip <-> aim)
+      if (!reloading) {
+        const baseY = hipPos.y + Math.sin(t * 9) * 0.015 * (move.lengthSq() > 0 ? 1 : 0.3);
+        gun.position.x = THREE.MathUtils.lerp(hipPos.x, AIM_POS.x, aimAmount);
+        gun.position.y = THREE.MathUtils.lerp(baseY, AIM_POS.y, aimAmount);
+        gun.position.z = THREE.MathUtils.lerp(hipPos.z, AIM_POS.z, aimAmount);
+      }
+
+      // Dynamic crosshair — reflects the weapon's real accuracy (see currentSpreadRad)
+      const chSpread = currentSpreadRad(currentWeapon, velocity.length(), aiming, spreadHeat);
+      const chGap = 3 + chSpread * 2200;
+      updateCrosshair(chGap);
+      updatePelletDots(dt);
+
+      if (!pointerLocked) {
+        const dx = (mouseX / window.innerWidth - 0.5) * 2;
+        const dy = (mouseY / window.innerHeight - 0.5) * 2;
+        if (Math.abs(dx) > 0.18) yaw -= dx * 0.09;
+        if (Math.abs(dy) > 0.18) pitch -= dy * 0.09;
+        pitch = THREE.MathUtils.clamp(pitch, -1.5, 1.5);
+      }
+
+      // Camera orientation is rebuilt from the stable look state every frame.
+      // Recoil and sway are view offsets only, so menu and pointer-lock rotations
+      // cannot leak into the next first-person frame.
+      recoilPitch *= Math.pow(0.0001, dt);
+      recoilYaw *= Math.pow(0.0001, dt);
+      let viewYaw = yaw + recoilYaw;
+      let viewPitch = pitch + recoilPitch;
+      if (scoped) {
+        const swayAmt = velocity.length() * 0.0035;
+        viewYaw += Math.sin(t * 13.5) * swayAmt;
+        viewPitch += Math.cos(t * 10.5) * swayAmt * 0.6;
+      }
+      camera.rotation.order = 'YXZ';
+      camera.rotation.set(viewPitch, viewYaw, -lean * 0.22);
+
+      // Tracers
+      for (let i = tracers.length - 1; i >= 0; i--) {
+        tracers[i].life -= dt;
+        tracers[i].line.material.opacity = tracers[i].life / 0.07;
+        if (tracers[i].life <= 0) { scene.remove(tracers[i].line); tracers.splice(i, 1); }
+      }
+
+      // Target hit-flash decay
+      for (const tgt of targets) {
+        if (tgt.flashT > 0) {
+          tgt.flashT -= dt;
+          if (tgt.flashT <= 0) tgt.materials.forEach(m => { m.emissive.setHex(0x000000); m.emissiveIntensity = 1; });
+        }
+      }
+      // Impact sparks
+      for (let i = impactSparks.length - 1; i >= 0; i--) {
+        impactSparks[i].life -= dt;
+        if (impactSparks[i].life <= 0) { scene.remove(impactSparks[i].mesh); impactSparks.splice(i, 1); }
+      }
+      // Hit marker decay
+      if (hitMarkerT > 0) {
+        hitMarkerT -= dt;
+        if (hitMarkerT <= 0) { chDot.style.background = '#fff'; chDot.style.boxShadow = ''; chDot.style.transform = 'translate(-50%, -50%) scale(1)'; }
+      }
+
+      // Health regen. In multiplayer the SERVER owns health entirely — regenerating
+      // locally would let an eliminated player heal out of the respawn screen.
+      if (!isMP()) { regenEntity(player, dt, t); }
+      updateHealthHUD();
+      for (const tgt of targets) { regenEntity(tgt, dt, t); updateHealthBar(tgt); }
+      for (const hb of healthBars) hb.group.quaternion.copy(camera.quaternion);
+
+      // Floating damage numbers: rise and fade
+      for (let i = damageNumbers.length - 1; i >= 0; i--) {
+        const d = damageNumbers[i];
+        d.life -= dt;
+        d.spr.position.y += dt * 0.5;
+        d.mat.opacity = Math.max(0, d.life / 0.7);
+        if (d.life <= 0) { scene.remove(d.spr); d.mat.dispose(); d.tex.dispose(); damageNumbers.splice(i, 1); }
+      }
+    }
+
+    // ---- Networking tick (outside the gameplay block so it survives elimination) ----
+    if (mp.active) {
+      sendLocalState(dt);
+      updateRemotePlayers(dt);
+      updateRespawnTimer();
+      updateKillFeed(dt);
+    }
+    if (!paused) updateDamageFeedback(dt);
+
+    // Rain belongs to the world, not to the FPS view: it keeps falling behind the menu
+    // (seen from the aerial camera) and during play. Pause still freezes it.
+    if (!paused) updateRain(dt);
+
+    // The main menu is a live view of this same scene, so world-visual updates must keep
+    // ticking while it is open. (Pause is deliberately excluded — pausing still freezes.)
+    if (menuView) {
+      updateAerialCamera(dt);
+      for (const hb of healthBars) hb.group.quaternion.copy(camera.quaternion);
+      for (let i = tracers.length - 1; i >= 0; i--) {
+        tracers[i].life -= dt;
+        tracers[i].line.material.opacity = tracers[i].life / 0.07;
+        if (tracers[i].life <= 0) { scene.remove(tracers[i].line); tracers.splice(i, 1); }
+      }
+      for (let i = impactSparks.length - 1; i >= 0; i--) {
+        impactSparks[i].life -= dt;
+        if (impactSparks[i].life <= 0) { scene.remove(impactSparks[i].mesh); impactSparks.splice(i, 1); }
+      }
+      for (let i = damageNumbers.length - 1; i >= 0; i--) {
+        const d = damageNumbers[i];
+        d.life -= dt;
+        d.spr.position.y += dt * 0.5;
+        d.mat.opacity = Math.max(0, d.life / 0.7);
+        if (d.life <= 0) { scene.remove(d.spr); d.mat.dispose(); d.tex.dispose(); damageNumbers.splice(i, 1); }
+      }
+      for (const tgt of targets) {
+        if (tgt.flashT > 0) {
+          tgt.flashT -= dt;
+          if (tgt.flashT <= 0) tgt.materials.forEach(m => { m.emissive.setHex(0x000000); m.emissiveIntensity = 1; });
+        }
+      }
+    }
+
+    // One render call, one scene, one camera — in both menu and gameplay.
+    renderer.render(scene, camera);
+  }
+
+  // ---------- Aerial main-menu camera ----------
+  // This does NOT build, clone, freeze or screenshot anything. It takes the one existing
+  // `camera` (the same PerspectiveCamera the FPS view uses, with `gun` parented to it) and
+  // parks it directly above the origin looking straight down at the one existing `scene`.
+  // The normal animate() loop keeps calling renderer.render(scene, camera) every frame, so
+  // whatever is happening in the live world — dummies, other players, tracers, shots,
+  // jumps, anything added to `scene` by multiplayer code — is what you see in the menu.
+  const hudEl = document.getElementById('hud');
+
+  let menuView = false;
+  let menuOrbit = 0;
+  const FPS_FOV = 75;               // the game's normal FPS field of view
+  const MENU_ORBIT_SPEED = 0.08;
+  const MENU_HEIGHT_SCALE = 0.84;
+  // Updated by applyAtmosphere() on every map load, so leaving the menu always restores
+  // the fog belonging to the map that is actually loaded.
+  const fogDefault = { near: scene.fog.near, far: scene.fog.far };
+  function mapHalfExtent() { return mapBounds + 4; }   // +4 keeps the perimeter inside frame
+
+  // Altitude needed for the whole playable map to fit on screen, both axes, at any aspect ratio.
+  function aerialHeight() {
+    const halfV = THREE.MathUtils.degToRad(camera.fov) * 0.5;
+    const half = mapHalfExtent();
+    const fitVertical   = half / Math.tan(halfV);
+    const fitHorizontal = half / (Math.tan(halfV) * camera.aspect);
+    return Math.min(Math.max(fitVertical, fitHorizontal) * 1.03, camera.far * 0.9);
+  }
+
+  function applyAerialCamera() {
+    camera.fov = FPS_FOV;
+    camera.updateProjectionMatrix();
+    const h = aerialHeight() * MENU_HEIGHT_SCALE;
+    const orbitRadius = h * 0.42;
+    camera.position.set(Math.sin(menuOrbit) * orbitRadius, h, Math.cos(menuOrbit) * orbitRadius);
+    camera.lookAt(0, 0, 0);
+    // Same fog object as the game — only its distances are pushed back so the map is readable
+    // from altitude. Restored exactly on PLAY.
+    scene.fog.near = h * 1.3;
+    scene.fog.far  = h * 2.8;
+  }
+
+  function updateAerialCamera(dt) {
+    menuOrbit = (menuOrbit + dt * MENU_ORBIT_SPEED) % (Math.PI * 2);
+    applyAerialCamera();
+  }
+
+  function enterMenuView() {
+    menuView = true;
+    gun.visible = false;             // FPS-only element, hidden while overhead
+    hudEl.style.display = 'none';    // crosshair / ammo / health belong to the FPS view
+    scopeEl.style.display = 'none';
+    applyAerialCamera();
+  }
+
+  function exitMenuView() {
+    if (!menuView) return;
+    menuView = false;
+    scene.fog.near = fogDefault.near;   // restore the game's normal fog
+    scene.fog.far  = fogDefault.far;
+    gun.visible = true;                 // weapon back
+    hudEl.style.display = '';           // HUD back
+    crosshairEl.style.display = 'block';
+    camera.fov = FPS_FOV;               // normal FPS camera settings
+    camera.updateProjectionMatrix();
+    camera.rotation.order = 'YXZ';
+    camera.rotation.z = 0;
+    // Position/rotation are driven by playerPos/yaw/pitch in animate() from the next frame on.
+  }
+
+  // =====================================================================
+  // MULTIPLAYER INTEGRATION
+  // ---------------------------------------------------------------------
+  // All networking lives in net.js (NeonNet). This section is the ONLY place
+  // that connects it to gameplay: remote player models, server-authoritative
+  // health/damage/elimination, shot replication, and the lobby/match flow.
+  // Single-player never enters any of it — gameMode stays 'single'.
+  // =====================================================================
+  const Net = window.NeonNet || null;
+
+  let gameMode = 'single';                 // 'single' | 'multiplayer'
+  const mp = {
+    active: false,                         // a match is running
+    dead: false,                           // local player eliminated, awaiting respawn
+    spectating: false,                     // eliminated with no respawn (Last Player Standing)
+    respawnAt: 0,
+    remotes: new Map(),                    // id -> remote player record
+    sendAccum: 0,
+    sendHz: 20,
+    lastSent: null,
+    names: new Map(),
+    playerStats: new Map(),                // id -> { team, kills, deaths }
+    myTeam: null,
+    teamScores: { red: 0, blue: 0 },
+    pendingSpawn: null
+  };
+  function isMP() { return gameMode === 'multiplayer'; }
+
+  // ---------- Game settings (host-configurable mode / score / time limits) ----------
+  const GAME_MODES_UI = [
+    { id: 'ffa', name: 'FREE-FOR-ALL', blurb: 'Every player for themself. First to the kill limit wins.' },
+    { id: 'team', name: 'TEAM DEATHMATCH', blurb: 'Red vs Blue, auto-balanced. First team to the score limit wins.' },
+    { id: 'infection', name: 'INFECTION', blurb: 'One or more players start infected. Anyone they eliminate turns infected too — survivors win by outlasting the clock.' },
+    { id: 'lastStanding', name: 'LAST PLAYER STANDING', blurb: 'No respawns. Last player alive wins the round.' }
+  ];
+  const MODE_LABEL = { ffa: 'Free-for-All', team: 'Team Deathmatch', infection: 'Infection', lastStanding: 'Last Player Standing' };
+  const SCORE_LIMIT_OPTIONS = [10, 20, 30, 50, 0];   // 0 = no limit
+  const TIME_LIMIT_OPTIONS = [0, 2, 5, 10];           // minutes; 0 = no limit
+  const fmtScore = v => v === 0 ? 'NO LIMIT' : String(v);
+  const fmtTime = v => v === 0 ? 'NO LIMIT' : (v + ' MIN');
+  const fmtFF = v => v ? 'ON' : 'OFF';
+
+  let gameSettings = { mode: 'ffa', scoreLimit: 30, timeLimitMin: 0, friendlyFire: true };
+
+  // ---------- Remote player models ----------
+  const REMOTE_COLOURS = [
+    [0x3f7ab5, 0x27506f], [0xb5432f, 0x7a2c1f], [0x4f9d5e, 0x2f6339], [0xa8862f, 0x6e571d],
+    [0x8a4fb5, 0x54306f], [0x37a6a0, 0x1f6663], [0xc26a2f, 0x80441d], [0x5a6472, 0x373e47]
+  ];
+
+  function makeNameTag(text) {
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 64;
+    const ctx = c.getContext('2d');
+    ctx.font = 'bold 30px Segoe UI, system-ui, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+    ctx.strokeText(text, 128, 32);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(text, 128, 32);
+    const tex = new THREE.CanvasTexture(c);
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+    const spr = new THREE.Sprite(mat);
+    spr.scale.set(1.5, 0.375, 1);
+    spr.renderOrder = 997;
+    return { sprite: spr, tex, mat };
+  }
+
+  function makeRemoteHealthBar() {
+    const g = new THREE.Group();
+    const bg = new THREE.Mesh(new THREE.PlaneGeometry(0.72, 0.09),
+      new THREE.MeshBasicMaterial({ color: 0x2a0e0e, depthTest: false }));
+    const fg = new THREE.Mesh(new THREE.PlaneGeometry(0.68, 0.06),
+      new THREE.MeshBasicMaterial({ color: 0x2ee06a, depthTest: false }));
+    fg.position.z = 0.001;
+    bg.renderOrder = 998; fg.renderOrder = 999;
+    g.add(bg, fg);
+    return { group: g, fg, halfW: 0.34 };
+  }
+
+  /** Team affiliation overrides the usual per-id colour so teammates (and, in
+   *  Infection, who's infected) are readable at a glance. */
+  function teamColour(id, team) {
+    if (team === 'red') return [0xd6453f, 0x7c2420];
+    if (team === 'blue') return [0x2f6fd2, 0x1c3f7a];
+    if (team === 'infected') return [0x3fae4a, 0x1c5f26];
+    if (team === 'survivor') return [0x3f7ab5, 0x27506f];
+    return REMOTE_COLOURS[id % REMOTE_COLOURS.length];
+  }
+  function applyTeamColour(rec) {
+    const stat = mp.playerStats.get(rec.id);
+    const col = teamColour(rec.id, stat ? stat.team : null);
+    rec.char.materials[0].color.setHex(col[0]);
+    rec.char.materials[1].color.setHex(col[1]);
+  }
+  /** Merges publicPlayer records (from lobby/matchStart/playerJoin/eliminated
+   *  messages) into local team/kill/death bookkeeping, and recolours any
+   *  already-spawned remote whose team just changed (e.g. an Infection bite). */
+  function ingestPlayers(list) {
+    (list || []).forEach(pl => {
+      const prev = mp.playerStats.get(pl.id);
+      const teamChanged = !prev || prev.team !== (pl.team || null);
+      mp.playerStats.set(pl.id, { team: pl.team || null, kills: pl.kills || 0, deaths: pl.deaths || 0 });
+      if (Net && pl.id === Net.selfId) mp.myTeam = pl.team || null;
+      const r = mp.remotes.get(pl.id);
+      if (r && teamChanged) applyTeamColour(r);
+    });
+    updateModeStatus();
+  }
+
+  function spawnRemotePlayer(id, name) {
+    if (mp.remotes.has(id)) return mp.remotes.get(id);
+    const stat = mp.playerStats.get(id);
+    const col = teamColour(id, stat ? stat.team : null);
+    const char = createCharacter({ suit: col[0], dark: col[1], head: true, gun: true });
+
+    // Every mesh of the model is tagged so the existing raycast can identify a hit
+    // and which body part it landed on.
+    char.hitParts.forEach(m => { m.userData.netId = id; });
+    if (char.head) char.head.userData.part = 'head';
+
+    const tag = makeNameTag(name || ('Player ' + id));
+    const bar = makeRemoteHealthBar();
+    const label = new THREE.Group();
+    tag.sprite.position.y = 0.3;
+    label.add(tag.sprite, bar.group);
+    label.position.y = 2.05;
+    char.group.add(label);
+
+    // Remote players are attached to the scene, not to `world`, so a map reload
+    // does not silently destroy them — removeRemotePlayer() owns their lifetime.
+    scene.add(char.group);
+
+    const rec = {
+      id, name: name || ('Player ' + id), char, tag, bar, label,
+      hp: 150, dead: false, cycle: 0, shootT: 0, reloadT: 0,
+      prevX: 0, prevZ: 0, speed: 0, meshes: char.hitParts
+    };
+    mp.remotes.set(id, rec);
+    return rec;
+  }
+
+  function removeRemotePlayer(id) {
+    const r = mp.remotes.get(id);
+    if (!r) return;
+    scene.remove(r.char.group);
+    r.char.group.traverse(o => {
+      if (o.geometry) o.geometry.dispose();
+      const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+      mats.forEach(m => { if (m && m !== skinMat && m !== bootMat) m.dispose(); });
+    });
+    if (r.tag) { r.tag.tex.dispose(); r.tag.mat.dispose(); }
+    mp.remotes.delete(id);
+  }
+
+  function clearRemotePlayers() {
+    Array.from(mp.remotes.keys()).forEach(removeRemotePlayer);
+  }
+
+  function remoteHitMeshes() {
+    const out = [];
+    mp.remotes.forEach(r => { if (!r.dead) out.push.apply(out, r.meshes); });
+    return out;
+  }
+
+  // ---------- Per-frame remote update: interpolate, then animate ----------
+  function updateRemotePlayers(dt) {
+    if (!Net || !mp.active) return;
+    const sampled = Net.samplePlayers();
+
+    // Drop models for players the server no longer reports.
+    mp.remotes.forEach((r, id) => { if (!sampled.has(id)) removeRemotePlayer(id); });
+
+    sampled.forEach((st, id) => {
+      let r = mp.remotes.get(id);
+      if (!r) r = spawnRemotePlayer(id, mp.names.get(id));
+      const g = r.char.group;
+
+      // Position comes from NeonNet already blended between snapshots, so this is a
+      // smooth glide rather than a teleport on every packet.
+      g.position.set(st.x, st.y, st.z);
+      g.rotation.y = st.yaw;
+      r.hp = st.hp;
+
+      const moved = Math.hypot(st.x - r.prevX, st.z - r.prevZ);
+      r.speed = dt > 0 ? moved / dt : 0;
+      r.prevX = st.x; r.prevZ = st.z;
+
+      if (st.dead !== r.dead) {
+        r.dead = st.dead;
+        g.visible = !st.dead;              // eliminated players leave the field
+        r.label.visible = !st.dead;
+      }
+      if (st.dead) return;
+
+      // --- animation state machine ---
+      g.scale.y = st.crouch ? 0.6 : 1;
+      const walking = st.moving && st.grounded && r.speed > 0.4;
+      r.cycle += dt * (walking ? (st.sprint ? 15 : st.crouch ? 7 : 11) : 0);
+      const swing = walking ? Math.sin(r.cycle) * (st.sprint ? 0.75 : 0.55) : 0;
+      r.char.legL.rotation.x = swing;
+      r.char.legR.rotation.x = -swing;
+
+      if (st.shooting) r.shootT = 0.12;
+      if (r.shootT > 0) r.shootT -= dt;
+      r.reloadT = st.reloading ? 0.3 : Math.max(0, r.reloadT - dt);
+
+      if (r.reloadT > 0) {
+        // Reload: weapon dips, arms drop to work the magazine.
+        r.char.armL.rotation.x = -0.9;
+        r.char.armR.rotation.x = -0.55;
+        if (r.char.gunProp) { r.char.gunProp.rotation.x = 0.7; r.char.gunProp.position.y = 1.0; }
+      } else {
+        // Idle / walking / shooting: arms track the aim pitch, with a kick when firing.
+        const aim = -0.12 - st.pitch * 0.8 + (r.shootT > 0 ? 0.22 : 0);
+        r.char.armL.rotation.x = aim + (walking ? -swing * 0.5 : 0);
+        r.char.armR.rotation.x = aim + (walking ? swing * 0.5 : 0);
+        if (r.char.gunProp) {
+          r.char.gunProp.rotation.x = -st.pitch + (r.shootT > 0 ? 0.25 : 0);
+          r.char.gunProp.position.y = 1.16;
+        }
+        if (!st.grounded) { r.char.legL.rotation.x = -0.35; r.char.legR.rotation.x = 0.3; }
+      }
+
+      // Billboards
+      r.label.quaternion.copy(camera.quaternion);
+      const frac = Math.max(0, Math.min(1, r.hp / 150));
+      r.bar.fg.scale.x = Math.max(0.001, frac);
+      r.bar.fg.position.x = -r.bar.halfW * (1 - frac);
+      r.bar.fg.material.color.setHex(frac > 0.5 ? 0x2ee06a : frac > 0.25 ? 0xe0c62e : 0xe0402e);
+    });
+  }
+
+  // ---------- Sending local state ----------
+  function sendLocalState(dt) {
+    if (!Net || !mp.active || mp.dead) return;
+    mp.sendAccum += dt;
+    if (mp.sendAccum < 1 / mp.sendHz) return;
+    mp.sendAccum = 0;
+    Net.sendState({
+      x: +playerPos.x.toFixed(2), y: +feetY.toFixed(2), z: +playerPos.z.toFixed(2),
+      yaw: +yaw.toFixed(3), pitch: +pitch.toFixed(3),
+      crouch: crouching, sprint: !!(keys['ShiftLeft'] || keys['ShiftRight']),
+      grounded: grounded, moving: velocity.length() > 0.4,
+      weapon: currentWeapon, reloading: reloading
+    });
+  }
+
+  // ---------- Damage feedback (local player only) ----------
+  const hurtVigEl = document.getElementById('hurtVig');
+  const dmgDirEl = document.getElementById('dmgDir');
+  const dmgArrows = [];
+  let hurtFlash = 0;
+
+  function showDamageFeedback(fromPos) {
+    hurtFlash = Math.max(hurtFlash, 0.9);
+    sHurt();
+    if (!fromPos) return;
+    // Bearing of the attacker relative to where the player is facing: 0 = dead ahead.
+    const dx = fromPos[0] - playerPos.x, dz = fromPos[2] - playerPos.z;
+    if (Math.abs(dx) < 0.001 && Math.abs(dz) < 0.001) return;
+    const worldAng = Math.atan2(dx, -dz);
+    const rel = worldAng - yaw;
+    const el = document.createElement('div');
+    el.className = 'dmgArrow';
+    el.innerHTML = '<i></i>';
+    el.style.transform = 'rotate(' + (rel * 180 / Math.PI) + 'deg)';
+    dmgDirEl.appendChild(el);
+    dmgArrows.push({ el, life: 1.3 });
+    while (dmgArrows.length > 5) {
+      const old = dmgArrows.shift();
+      if (old.el.parentNode) old.el.parentNode.removeChild(old.el);
+    }
+  }
+
+  function updateDamageFeedback(dt) {
+    if (hurtFlash > 0) {
+      hurtFlash = Math.max(0, hurtFlash - dt * 1.8);
+      hurtVigEl.style.opacity = String(hurtFlash * 0.8);
+    } else if (hurtVigEl.style.opacity !== '0') {
+      hurtVigEl.style.opacity = '0';
+    }
+    for (let i = dmgArrows.length - 1; i >= 0; i--) {
+      const a = dmgArrows[i];
+      a.life -= dt;
+      if (a.life <= 0) {
+        if (a.el.parentNode) a.el.parentNode.removeChild(a.el);
+        dmgArrows.splice(i, 1);
+      } else {
+        a.el.style.opacity = String(Math.min(1, a.life / 0.6));
+      }
+    }
+  }
+  function clearDamageFeedback() {
+    hurtFlash = 0; hurtVigEl.style.opacity = '0';
+    dmgArrows.forEach(a => { if (a.el.parentNode) a.el.parentNode.removeChild(a.el); });
+    dmgArrows.length = 0;
+  }
+
+  // ---------- Kill feed ----------
+  const killFeedEl = document.getElementById('killFeed');
+  const killFeed = [];
+  function pushKillFeed(text) {
+    const el = document.createElement('div');
+    el.className = 'kfRow';
+    el.textContent = text;
+    killFeedEl.appendChild(el);
+    killFeed.push({ el, life: 5 });
+    while (killFeed.length > 5) {
+      const o = killFeed.shift();
+      if (o.el.parentNode) o.el.parentNode.removeChild(o.el);
+    }
+  }
+  function updateKillFeed(dt) {
+    for (let i = killFeed.length - 1; i >= 0; i--) {
+      killFeed[i].life -= dt;
+      if (killFeed[i].life <= 0) {
+        const o = killFeed.splice(i, 1)[0];
+        if (o.el.parentNode) o.el.parentNode.removeChild(o.el);
+      } else if (killFeed[i].life < 1) {
+        killFeed[i].el.style.opacity = String(killFeed[i].life);
+      }
+    }
+  }
+  function clearKillFeed() {
+    killFeed.forEach(o => { if (o.el.parentNode) o.el.parentNode.removeChild(o.el); });
+    killFeed.length = 0;
+  }
+
+  // ---------- Elimination / respawn ----------
+  const respawnMenuEl = document.getElementById('respawnMenu');
+  const respawnByEl = document.getElementById('respawnBy');
+  const respawnSecsEl = document.getElementById('respawnSecs');
+  const respawnBtnEl = document.getElementById('respawnBtn');
+  const respawnCountEl = document.getElementById('respawnCount');
+
+  const respawnHeadingEl = document.getElementById('respawnHeading');
+
+  function enterEliminated(byName, respawnAt, opts) {
+    opts = opts || {};
+    mp.dead = true;
+    mp.spectating = !!opts.spectating;
+    mp.respawnAt = respawnAt;
+    player.health = 0;
+    updateHealthHUD();
+    clearInput();                                   // controls stop responding
+    aiming = false; keys['Mouse0'] = false;
+    scopeEl.style.display = 'none';
+    if (document.exitPointerLock) document.exitPointerLock();
+
+    if (opts.infected) {
+      respawnHeadingEl.textContent = 'INFECTED';
+      respawnByEl.textContent = 'You have been infected!';
+    } else if (opts.spectating) {
+      respawnHeadingEl.textContent = 'ELIMINATED';
+      respawnByEl.textContent = (byName ? ('Eliminated by ' + byName + '. ') : 'You were eliminated. ') +
+        (opts.remaining != null ? (opts.remaining + ' player' + (opts.remaining === 1 ? '' : 's') + ' remain.') : 'Spectating for the rest of the round.');
+    } else {
+      respawnHeadingEl.textContent = 'ELIMINATED';
+      respawnByEl.textContent = byName ? ('Eliminated by ' + byName + '.') : 'You were eliminated.';
+    }
+
+    if (opts.spectating) {
+      respawnCountEl.style.display = 'none';
+      respawnBtnEl.style.display = 'none';
+    } else {
+      respawnBtnEl.style.display = '';
+      respawnBtnEl.disabled = true;
+    }
+    respawnMenuEl.style.display = 'flex';
+  }
+
+  function exitEliminated() {
+    mp.dead = false;
+    mp.spectating = false;
+    respawnMenuEl.style.display = 'none';
+  }
+
+  function updateRespawnTimer() {
+    if (!mp.dead || mp.spectating) return;
+    // The countdown is drawn from the SERVER's respawn timestamp; the client never
+    // decides when it may come back.
+    const remain = Math.max(0, mp.respawnAt - Date.now());
+    const secs = Math.ceil(remain / 1000);
+    if (remain > 0) {
+      respawnCountEl.style.display = '';
+      respawnSecsEl.textContent = String(secs);
+      respawnBtnEl.disabled = true;
+    } else {
+      respawnCountEl.style.display = 'none';
+      respawnBtnEl.disabled = false;
+    }
+  }
+
+  function applyServerSpawn(sp) {
+    playerPos.set(sp.x, 0, sp.z);
+    feetY = getGroundHeight(sp.x, sp.z, 2);
+    vy = 0; grounded = true; crouching = false; eyeHeight = 1.6; lean = 0;
+    yaw = sp.yaw || 0; pitch = 0; recoilPitch = 0; recoilYaw = 0;
+    velocity.set(0, 0, 0);
+    camera.position.set(sp.x, feetY + eyeHeight, sp.z);
+    playerBody.position.set(sp.x, feetY, sp.z);
+  }
+
+  // ---------- Match lifecycle ----------
+  function beginMultiplayerMatch(msg) {
+    gameMode = 'multiplayer';
+    mp.active = true;
+    mp.dead = false;
+    mp.spectating = false;
+    mp.teamScores = { red: 0, blue: 0 };
+    if (msg.settings) { gameSettings = msg.settings; refreshSettingsUI(); }
+    clearRemotePlayers();
+    clearDamageFeedback();
+    clearKillFeed();
+    respawnMenuEl.style.display = 'none';
+    if (msg.players) ingestPlayers(msg.players);
+
+    // Everyone loads the host's map. loadMap() rebuilds the world from scratch, and
+    // buildDummy() is suppressed in multiplayer, so no dummies can survive into a match.
+    if (msg.mapId && msg.mapId !== currentMapId) selectMapLocal(msg.mapId);
+    else loadMap(currentMapId);
+
+    exitMenuView();
+    overlayEl.style.display = 'none';
+    pauseMenuEl.style.display = 'none';
+    resetForMultiplayer();
+    if (msg.spawn) applyServerSpawn(msg.spawn);
+    started = true; paused = false; gameOver = false;
+    updateHUD(); updateHealthHUD(); updatePauseNetInfo(); updateModeStatus();
+    requestLock();
+  }
+
+  function resetForMultiplayer() {
+    ammo = { rifle: 30, pistol: 12, sniper: 5, shotgun: 6 };
+    reloading = false; fireCooldown = 0; spreadHeat = 0; aiming = false; aimAmount = 0;
+    currentWeapon = 'rifle'; buildGun('rifle');
+    tracers.forEach(t => scene.remove(t.line)); tracers.length = 0;
+    camera.fov = 75; camera.updateProjectionMatrix();
+    player.health = player.maxHealth; player.lastDamageT = -999;
+    scopeEl.style.display = 'none'; crosshairEl.style.display = 'block';
+  }
+
+  function endMultiplayer(reason) {
+    mp.active = false;
+    mp.dead = false;
+    mp.spectating = false;
+    clearRemotePlayers();
+    clearDamageFeedback();
+    clearKillFeed();
+    respawnMenuEl.style.display = 'none';
+    mp.names.clear();
+    mp.playerStats.clear();
+    mp.myTeam = null;
+    mp.teamScores = { red: 0, blue: 0 };
+    updateModeStatus();
+    if (Net) Net.leave(true);
+    if (gameMode === 'multiplayer') {
+      gameMode = 'single';
+      loadMap(currentMapId);         // rebuild the world, dummies included again
+    }
+    updatePauseNetInfo();
+    if (reason) setNetStatus('joinStatus', reason, 'bad');
+  }
+
+  // ---------- Wiring NeonNet -> gameplay ----------
+  if (Net) {
+    Net.on('welcome', msg => {
+      gameMode = 'multiplayer';          // strips dummies from the live menu world too
+      loadMap(currentMapId);
+      if (msg.lan) mp.lanAddress = msg.lan;
+      if (msg.mapId && msg.mapId !== currentMapId) selectMapLocal(msg.mapId);
+      if (msg.settings) { gameSettings = msg.settings; refreshSettingsUI(); }
+      updateNetPanels();
+    });
+
+    Net.on('lobby', lob => {
+      lob.players.forEach(pl => mp.names.set(pl.id, pl.name));
+      ingestPlayers(lob.players);
+      if (lob.settings) { gameSettings = lob.settings; refreshSettingsUI(); }
+      updateNetPanels();
+      updatePauseNetInfo();
+    });
+
+    Net.on('mapChange', msg => {
+      // The host's map is authoritative for everyone.
+      if (msg.mapId && msg.mapId !== currentMapId) selectMapLocal(msg.mapId);
+      updateNetPanels();
+    });
+
+    Net.on('matchStart', beginMultiplayerMatch);
+
+    Net.on('matchEnd', msg => {
+      msg = msg || {};
+      ingestPlayers(msg.scores);
+      if (msg.teamScores) mp.teamScores = msg.teamScores;
+      mp.active = false;
+      clearRemotePlayers();
+      showMatchResult(msg);
+    });
+
+    Net.on('playerJoin', msg => {
+      if (msg.player) { mp.names.set(msg.player.id, msg.player.name); ingestPlayers([msg.player]); }
+      if (mp.active) pushKillFeed(msg.player.name + ' joined');
+      updatePauseNetInfo();
+    });
+
+    Net.on('playerLeave', msg => {
+      removeRemotePlayer(msg.id);
+      const nm = mp.names.get(msg.id);
+      if (mp.active && nm) pushKillFeed(nm + ' left');
+      mp.names.delete(msg.id);
+      updateNetPanels();
+      updatePauseNetInfo();
+    });
+
+    // Server says the local player took damage. This is the ONLY trigger for the
+    // hurt effect, so another player being shot elsewhere never flashes our screen.
+    Net.on('damage', msg => {
+      player.health = msg.hp;
+      player.lastDamageT = clock.elapsedTime;
+      updateHealthHUD();
+      showDamageFeedback(msg.from);
+    });
+
+    // Server-confirmed health (regen, corrections).
+    Net.on('hp', msg => {
+      if (msg.id === Net.selfId) {
+        player.health = msg.hp;
+        updateHealthHUD();
+      } else {
+        const r = mp.remotes.get(msg.id);
+        if (r) r.hp = msg.hp;
+      }
+    });
+
+    // Our shot landed — feedback comes from the server, not from our own raycast.
+    Net.on('hitConfirm', msg => {
+      showHitMarker();
+      sHit();
+      const r = mp.remotes.get(msg.targetId);
+      if (r) {
+        const pos = r.char.group.position.clone();
+        pos.y += msg.head ? 1.6 : 1.1;
+        spawnDamageNumber(pos, msg.amount, msg.head);
+      }
+    });
+
+    // Someone else fired: draw their tracer(s) and muzzle flash. Shotgun shells arrive
+    // as an `ends` array (one per pellet); every other weapon still sends a single `end`.
+    Net.on('shot', msg => {
+      if (!mp.active || !msg.origin) return;
+      const r = mp.remotes.get(msg.id);
+      if (r) r.shootT = 0.12;
+      const o = new THREE.Vector3(msg.origin[0], msg.origin[1], msg.origin[2]);
+      const ends = Array.isArray(msg.ends) ? msg.ends : (msg.end ? [msg.end] : []);
+      const opacity = ends.length > 1 ? 0.4 : 0.7;
+      ends.forEach(end => {
+        if (!end) return;
+        const e = new THREE.Vector3(end[0], end[1], end[2]);
+        const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([o, e]),
+          new THREE.LineBasicMaterial({ color: 0xffc46b, transparent: true, opacity }));
+        scene.add(line);
+        tracers.push({ line, life: 0.07 });
+      });
+    });
+
+    Net.on('eliminated', msg => {
+      ingestPlayers(msg.scores);
+      if (msg.teamScores) mp.teamScores = msg.teamScores;
+      const victimName = mp.names.get(msg.id) || ('Player ' + msg.id);
+      if (msg.mode === 'infection' && msg.infected) {
+        pushKillFeed(victimName + ' was infected!');
+      } else if (msg.mode === 'lastStanding') {
+        pushKillFeed((msg.byName ? msg.byName : 'The world') + '  ⟶  ' + victimName +
+          (msg.remaining != null ? ('  (' + msg.remaining + ' left)') : ''));
+      } else {
+        pushKillFeed((msg.byName ? msg.byName : 'The world') + '  ⟶  ' + victimName);
+      }
+      updateModeStatus();
+
+      if (msg.id === Net.selfId) {
+        enterEliminated(msg.byName, msg.respawnAt, {
+          infected: msg.mode === 'infection' && msg.infected,
+          spectating: msg.mode === 'lastStanding',
+          remaining: msg.remaining
+        });
+      } else {
+        const r = mp.remotes.get(msg.id);
+        if (r) { r.dead = true; r.char.group.visible = false; r.label.visible = false; }
+      }
+    });
+
+    Net.on('respawned', msg => {
+      if (msg.id === Net.selfId) {
+        exitEliminated();
+        player.health = msg.hp;
+        player.lastDamageT = -999;
+        resetForMultiplayer();
+        applyServerSpawn(msg);
+        updateHealthHUD(); updateHUD();
+        clearDamageFeedback();
+        if (!paused) requestLock();
+      } else {
+        const r = mp.remotes.get(msg.id);
+        if (r) { r.dead = false; r.char.group.visible = true; r.hp = msg.hp; }
+      }
+    });
+
+    Net.on('respawnDenied', msg => { mp.respawnAt = msg.respawnAt; });
+
+    // The server rejected our position (speed check) and told us where we really are.
+    Net.on('correction', msg => {
+      playerPos.set(msg.x, 0, msg.z);
+      feetY = msg.y;
+      velocity.set(0, 0, 0);
+    });
+
+    Net.on('status', st => {
+      if (st.state === 'failed' || st.state === 'closed') {
+        setNetStatus('joinStatus', st.message, 'bad');
+        setNetStatus('hostStatus', st.message, 'bad');
+        if (mp.active) { endMultiplayer(); showStart(); }
+      } else if (st.state === 'connecting') {
+        setNetStatus('joinStatus', 'Connecting…', 'busy');
+        setNetStatus('hostStatus', 'Starting…', 'busy');
+      } else if (st.state === 'connected') {
+        setNetStatus('joinStatus', 'Connected. Waiting for host…', 'ok');
+        setNetStatus('hostStatus', '', '');
+      }
+    });
+
+    Net.on('disconnected', () => {
+      if (mp.active) { endMultiplayer(); showStart(); }
+      updateNetPanels();
+    });
+  }
+
+  // ---------- Menu / pause ----------
+  const overlayEl = document.getElementById('overlay');
+  const pauseMenuEl = document.getElementById('pauseMenu');
+
+  const menuRootEl = document.getElementById('menuRoot');
+  const mapPanelEl = document.getElementById('mapPanel');
+  const mapListEl = document.getElementById('mapList');
+  const mapNameEl = document.getElementById('currentMapName');
+  const hostNoticeEl = document.getElementById('hostNotice');
+  const playerNameInputEl = document.getElementById('playerNameInput');
+
+  function showStart() {
+    started = false; paused = false; gameOver = false;
+    if (mp.active) endMultiplayer();
+    respawnMenuEl.style.display = 'none';
+    clearDamageFeedback();
+    clearInput();
+    if (document.exitPointerLock) document.exitPointerLock();
+    overlayEl.style.display = 'flex';
+    pauseMenuEl.style.display = 'none';
+    showMenuRoot();
+    enterMenuView();   // same camera, same scene, now overhead — world keeps running underneath
+  }
+  const hostPanelEl = document.getElementById('hostPanel');
+  const joinPanelEl = document.getElementById('joinPanel');
+  const settingsPanelEl = document.getElementById('settingsPanel');
+  const matchResultPanelEl = document.getElementById('matchResultPanel');
+  const mapLockNoteEl = document.getElementById('mapLockNote');
+  const pauseNetEl = document.getElementById('pauseNet');
+  const pauseAddrEl = document.getElementById('pauseAddr');
+  const pausePlayerCountEl = document.getElementById('pausePlayerCount');
+
+  function hideAllMenuPanels() {
+    menuRootEl.style.display = 'none';
+    mapPanelEl.style.display = 'none';
+    hostPanelEl.style.display = 'none';
+    joinPanelEl.style.display = 'none';
+    settingsPanelEl.style.display = 'none';
+    matchResultPanelEl.style.display = 'none';
+  }
+  function showMenuRoot() { hideAllMenuPanels(); menuRootEl.style.display = 'flex'; }
+  function showMapSelect() { hideAllMenuPanels(); mapPanelEl.style.display = 'flex'; refreshMapUI(); }
+  function showHostPanel() { hideAllMenuPanels(); hostPanelEl.style.display = 'flex'; updateNetPanels(); }
+  function showJoinPanel() { hideAllMenuPanels(); joinPanelEl.style.display = 'flex'; updateNetPanels(); }
+  function showSettingsPanel() { hideAllMenuPanels(); settingsPanelEl.style.display = 'flex'; refreshSettingsUI(); }
+
+  // ---------- Game settings panel (host only) ----------
+  const modeListEl = document.getElementById('modeList');
+
+  function buildModeList() {
+    modeListEl.innerHTML = '';
+    GAME_MODES_UI.forEach(m => {
+      const card = document.createElement('button');
+      card.className = 'modeCard';
+      card.dataset.mode = m.id;
+      const title = document.createElement('div');
+      title.className = 'modeCardName'; title.textContent = m.name;
+      const blurb = document.createElement('div');
+      blurb.className = 'modeCardBlurb'; blurb.textContent = m.blurb;
+      card.appendChild(title); card.appendChild(blurb);
+      card.addEventListener('click', () => selectSetting('mode', m.id));
+      modeListEl.appendChild(card);
+    });
+  }
+  function buildPillRow(containerId, options, key, formatLabel) {
+    const el = document.getElementById(containerId);
+    el.innerHTML = '';
+    options.forEach(v => {
+      const btn = document.createElement('button');
+      btn.className = 'pillBtn';
+      btn.dataset.val = String(v);
+      btn.textContent = formatLabel(v);
+      btn.addEventListener('click', () => selectSetting(key, v));
+      el.appendChild(btn);
+    });
+  }
+  function refreshPillRow(containerId, key) {
+    const el = document.getElementById(containerId);
+    Array.prototype.forEach.call(el.children, btn => btn.classList.toggle('sel', btn.dataset.val === String(gameSettings[key])));
+  }
+  /** Only the host may change settings, and only between rounds — enforced here
+   *  as well as on the server, which is the actual authority. */
+  function selectSetting(key, value) {
+    if (!(Net && Net.connected && Net.isHost)) return;
+    gameSettings = Object.assign({}, gameSettings, { [key]: value });
+    refreshSettingsUI();
+    Net.setSettings(gameSettings);
+  }
+  function refreshSettingsUI() {
+    Array.prototype.forEach.call(modeListEl.children, el => el.classList.toggle('sel', el.dataset.mode === gameSettings.mode));
+    refreshPillRow('scoreLimitRow', 'scoreLimit');
+    refreshPillRow('timeLimitRow', 'timeLimitMin');
+    refreshPillRow('friendlyFireRow', 'friendlyFire');
+    document.getElementById('friendlyFireGroup').style.display = gameSettings.mode === 'team' ? 'flex' : 'none';
+    updateModeSummaryText();
+  }
+  function modeSummaryText() {
+    const label = MODE_LABEL[gameSettings.mode] || gameSettings.mode;
+    const bits = [label];
+    if ((gameSettings.mode === 'ffa' || gameSettings.mode === 'team') && gameSettings.scoreLimit > 0) {
+      bits.push('first to ' + gameSettings.scoreLimit);
+    }
+    if (gameSettings.timeLimitMin > 0) bits.push(gameSettings.timeLimitMin + ' min');
+    return bits.join(' · ');
+  }
+  function updateModeSummaryText() {
+    const t = modeSummaryText();
+    const h = document.getElementById('hostModeName'); if (h) h.textContent = t;
+    const j = document.getElementById('joinModeName'); if (j) j.textContent = t;
+  }
+
+  /** In-HUD readout during a match: running score, infected/survivor status, etc. */
+  function updateModeStatus() {
+    const el = document.getElementById('modeStatus');
+    if (!el) return;
+    if (!mp.active) { el.textContent = ''; return; }
+    const s = gameSettings;
+    if (s.mode === 'team') {
+      const ts = mp.teamScores || { red: 0, blue: 0 };
+      const limit = s.scoreLimit > 0 ? ('/' + s.scoreLimit) : '';
+      el.textContent = 'RED ' + (ts.red || 0) + limit + '   —   BLUE ' + (ts.blue || 0) + limit;
+    } else if (s.mode === 'infection') {
+      let survivors = 0;
+      mp.playerStats.forEach(p => { if (p.team === 'survivor') survivors++; });
+      const youText = mp.myTeam === 'infected' ? 'YOU ARE INFECTED' : (mp.myTeam === 'survivor' ? 'YOU ARE A SURVIVOR' : '');
+      el.textContent = (youText ? youText + '   ·   ' : '') + survivors + ' SURVIVOR' + (survivors === 1 ? '' : 'S') + ' LEFT';
+    } else if (s.mode === 'lastStanding') {
+      el.textContent = 'LAST PLAYER STANDING';
+    } else {
+      const mine = mp.playerStats.get(Net ? Net.selfId : -1);
+      const kills = mine ? mine.kills : 0;
+      el.textContent = s.scoreLimit > 0 ? ('KILLS ' + kills + ' / ' + s.scoreLimit) : ('KILLS ' + kills);
+    }
+  }
+
+  // ---------- Round result panel ----------
+  function renderMatchResult(msg) {
+    let headline = 'ROUND OVER', subline = '';
+    const reason = msg.reason;
+    if (reason === 'lastStanding') {
+      headline = msg.winnerName ? (msg.winnerName + ' WINS') : 'NO SURVIVORS';
+      subline = 'Last player standing';
+    } else if (reason === 'infection') {
+      headline = 'THE INFECTED WIN';
+      subline = 'Every survivor was infected';
+    } else if (reason === 'score') {
+      if (msg.winnerTeam) { headline = msg.winnerTeam.toUpperCase() + ' TEAM WINS'; subline = 'Score limit reached'; }
+      else { headline = msg.winnerName ? (msg.winnerName + ' WINS') : 'ROUND OVER'; subline = 'Score limit reached'; }
+    } else if (reason === 'time') {
+      if (msg.winnerTeam === 'survivor') { headline = 'THE SURVIVORS WIN'; subline = 'Time ran out'; }
+      else if (msg.winnerTeam) { headline = msg.winnerTeam.toUpperCase() + ' TEAM WINS'; subline = 'Time ran out'; }
+      else if (msg.winnerName) { headline = msg.winnerName + ' WINS'; subline = 'Most kills when time ran out'; }
+      else { headline = "TIME'S UP"; subline = 'No winner this round'; }
+    } else if (reason === 'hostEnded') {
+      headline = 'MATCH ENDED';
+      subline = 'Ended by the host';
+    }
+    document.getElementById('matchResultTitle').textContent = headline;
+    document.getElementById('matchResultSub').textContent = subline;
+
+    const teamEl = document.getElementById('matchResultTeamScore');
+    if (msg.teamScores && gameSettings.mode === 'team') {
+      teamEl.style.display = '';
+      teamEl.textContent = 'RED ' + (msg.teamScores.red || 0) + '  —  BLUE ' + (msg.teamScores.blue || 0);
+    } else {
+      teamEl.style.display = 'none';
+    }
+
+    const listEl = document.getElementById('matchResultList');
+    listEl.innerHTML = '';
+    const scores = (msg.scores || []).slice().sort((a, b) => (b.kills - a.kills) || (a.deaths - b.deaths));
+    scores.forEach(p => {
+      const row = document.createElement('div');
+      row.className = 'mrRow' + (Net && p.id === Net.selfId ? ' self' : '');
+      const left = document.createElement('span');
+      left.textContent = p.name + (p.team ? ' · ' + p.team : '');
+      const right = document.createElement('span');
+      right.textContent = p.kills + ' K / ' + p.deaths + ' D';
+      row.appendChild(left); row.appendChild(right);
+      listEl.appendChild(row);
+    });
+  }
+  function showMatchResult(msg) {
+    started = false; paused = false; gameOver = false;
+    respawnMenuEl.style.display = 'none';
+    clearDamageFeedback();
+    clearInput();
+    if (document.exitPointerLock) document.exitPointerLock();
+    overlayEl.style.display = 'flex';
+    pauseMenuEl.style.display = 'none';
+    hideAllMenuPanels();
+    renderMatchResult(msg);
+    matchResultPanelEl.style.display = 'flex';
+    enterMenuView();
+  }
+
+  function setNetStatus(id, text, cls) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = text || '';
+    el.className = 'netStatus' + (cls ? ' ' + cls : '');
+  }
+
+  /** The address other people type. Prefer the LAN IP the server detected. */
+  function joinAddressText() {
+    if (mp.lanAddress) return mp.lanAddress;
+    if (Net && Net.address) return Net.address;
+    const page = Net ? Net.pageAddress() : '';
+    return page || '';
+  }
+
+  function updateNetPanels() {
+    const connected = !!(Net && Net.connected);
+    const isHostNow = connected && Net.isHost;
+    const mapDef = MapRegistry[currentMapId];
+
+    // Host lobby
+    document.getElementById('hostMapName').textContent = mapDef ? mapDef.name : '—';
+    updateModeSummaryText();
+    document.getElementById('hostAddr').textContent = joinAddressText();
+    const count = connected ? Net.lobby.count : 0;
+    const max = connected ? Net.lobby.max : 8;
+    document.getElementById('hostPlayerCount').textContent = count + '/' + max;
+    document.getElementById('hostStartBtn').disabled = !isHostNow;
+
+    const listEl = document.getElementById('playerList');
+    listEl.innerHTML = '';
+    if (connected) {
+      Net.lobby.players.forEach(pl => {
+        const row = document.createElement('div');
+        row.className = 'plRow' + (pl.id === Net.selfId ? ' self' : '');
+        const nm = document.createElement('span');
+        nm.textContent = pl.name + (pl.id === Net.selfId ? ' (you)' : '');
+        const tag = document.createElement('span');
+        tag.className = 'plTag';
+        tag.textContent = pl.isHost ? 'HOST' : '';
+        row.appendChild(nm); row.appendChild(tag);
+        listEl.appendChild(row);
+      });
+    }
+
+    // Join panel lobby view
+    const joinLobbyEl = document.getElementById('joinLobby');
+    joinLobbyEl.style.display = (connected && !Net.isHost) ? 'flex' : 'none';
+    if (connected && !Net.isHost) {
+      document.getElementById('joinMapName').textContent = mapDef ? mapDef.name : '—';
+      document.getElementById('joinPlayerCount').textContent = count + '/' + max;
+      document.getElementById('joinPlayerList').textContent =
+        Net.lobby.players.map(pl => pl.name + (pl.isHost ? ' (host)' : '')).join(' · ');
+      document.getElementById('joinGoBtn').textContent = 'WAITING FOR HOST…';
+      document.getElementById('joinGoBtn').disabled = true;
+    } else {
+      document.getElementById('joinGoBtn').textContent = 'JOIN';
+      document.getElementById('joinGoBtn').disabled = false;
+    }
+
+    // Clients may browse maps but not change them.
+    const locked = connected && !Net.isHost;
+    mapLockNoteEl.style.display = locked ? 'block' : 'none';
+    Array.prototype.forEach.call(mapListEl.children, el => {
+      if (locked) el.setAttribute('disabled', 'disabled'); else el.removeAttribute('disabled');
+    });
+  }
+
+  /** Host's join address stays reachable from the pause menu at any time. */
+  function updatePauseNetInfo() {
+    const showIt = !!(Net && Net.connected && Net.isHost);
+    pauseNetEl.style.display = showIt ? 'flex' : 'none';
+    if (showIt) {
+      pauseAddrEl.textContent = joinAddressText();
+      pausePlayerCountEl.textContent = Net.lobby.count + '/' + Net.lobby.max;
+    }
+  }
+
+  // ---------- Host / Join actions ----------
+  function startHosting() {
+    hostNoticeEl.style.display = 'none';
+    showHostPanel();
+    if (Net && Net.connected && Net.isHost) { updateNetPanels(); return; }
+
+    const page = Net ? Net.pageAddress() : '';
+    if (!page) {
+      // Opened from disk: there is no server to talk to.
+      setNetStatus('hostStatus',
+        'Run "node server.js" on this PC, then open the address it prints (for example http://localhost:3000) instead of opening the file directly.',
+        'bad');
+      return;
+    }
+    setNetStatus('hostStatus', 'Starting…', 'busy');
+    Net.host(page, { name: playerName(), mapId: currentMapId });
+  }
+
+  function joinGame() {
+    const raw = document.getElementById('joinAddr').value;
+    const addr = Net ? Net.normalizeAddress(raw) : null;
+    if (!addr) { setNetStatus('joinStatus', 'Enter an address like 192.168.2.12:3000', 'bad'); return; }
+    setNetStatus('joinStatus', 'Connecting…', 'busy');
+    Net.join(addr, { name: playerName() });
+  }
+
+  function playerName() {
+    const cleanName = value => String(value || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 16);
+    try {
+      const n = cleanName(window.localStorage && window.localStorage.getItem('neon-name'));
+      if (n) return n;
+    } catch (e) {}
+    const generated = 'Player ' + (1 + Math.floor(Math.random() * 99));
+    try { if (window.localStorage) window.localStorage.setItem('neon-name', generated); } catch (e) {}
+    return generated;
+  }
+
+  function savePlayerName() {
+    const name = String(playerNameInputEl.value || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 16);
+    const savedName = name || playerName();
+    playerNameInputEl.value = savedName;
+    try { if (window.localStorage) window.localStorage.setItem('neon-name', savedName); } catch (e) {}
+  }
+
+  function leaveNetwork() {
+    endMultiplayer();
+    if (Net) Net.leave();
+    setNetStatus('joinStatus', '', '');
+    setNetStatus('hostStatus', '', '');
+    updateNetPanels();
+    updatePauseNetInfo();
+  }
+
+  // ---------- Map selection ----------
+  function buildMapList() {
+    mapListEl.innerHTML = '';
+    mapOrder.forEach(id => {
+      const def = MapRegistry[id];
+      const card = document.createElement('button');
+      card.className = 'mapCard' + (id === currentMapId ? ' sel' : '');
+      card.dataset.mapId = id;
+      const title = document.createElement('div');
+      title.className = 'mapCardName';
+      title.textContent = def.name;
+      const blurb = document.createElement('div');
+      blurb.className = 'mapCardBlurb';
+      blurb.textContent = def.blurb;
+      card.appendChild(title); card.appendChild(blurb);
+      card.addEventListener('click', () => selectMap(id));
+      mapListEl.appendChild(card);
+    });
+  }
+  /** Loads a map locally without telling the server about it. */
+  function selectMapLocal(id) {
+    if (id !== currentMapId) loadMap(id);
+    refreshMapUI();
+    updateNetPanels();
+  }
+  function selectMap(id) {
+    // In a lobby only the host picks the map; clients follow the host's choice.
+    if (Net && Net.connected && !Net.isHost) {
+      setNetStatus('joinStatus', 'The host chooses the map.', 'busy');
+      return;
+    }
+    selectMapLocal(id);
+    if (Net && Net.connected && Net.isHost) Net.setMap(id);
+  }
+  function refreshMapUI() {
+    const def = MapRegistry[currentMapId];
+    if (mapNameEl && def) mapNameEl.textContent = def.name;
+    Array.prototype.forEach.call(mapListEl.children, el => {
+      el.classList.toggle('sel', el.dataset.mapId === currentMapId);
+    });
+  }
+  function clearInput() {
+    aiming = false;
+    for (const k in keys) keys[k] = false;
+  }
+  function requestLock() {
+    try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) {}
+  }
+  function pauseGame() {
+    if (!started || gameOver) return;
+    paused = true;
+    clearInput();
+    updatePauseNetInfo();      // the host's join address must be readable at any time
+    pauseMenuEl.style.display = 'flex';
+    if (document.exitPointerLock) document.exitPointerLock();
+  }
+  function resumeGame() {
+    paused = false;
+    pauseMenuEl.style.display = 'none';
+    if (mp.dead) return;       // an eliminated player goes back to the respawn screen
+    requestLock();
+    setTimeout(() => { if (!pointerLocked && started && !paused) requestLock(); }, 250);
+  }
+
+  function reset() {
+    ammo = { rifle: 30, pistol: 12, sniper: 5, shotgun: 6 };
+    reloading = false; fireCooldown = 0; spreadHeat = 0; aiming = false; aimAmount = 0;
+    gameOver = false; paused = false;
+    currentWeapon = 'rifle'; buildGun('rifle');
+    tracers.forEach(t => scene.remove(t.line)); tracers.length = 0;
+    camera.fov = 75; camera.updateProjectionMatrix();
+    respawnPlayer();   // uses the loaded map's spawn point
+    scopeEl.style.display = 'none'; crosshairEl.style.display = 'block';
+    player.health = player.maxHealth; player.lastDamageT = -999;
+    targets.forEach(tgt => {
+      tgt.health = tgt.maxHealth; tgt.lastDamageT = -999; tgt.flashT = 0;
+      tgt.materials.forEach(m => { m.emissive.setHex(0x000000); m.emissiveIntensity = 1; });
+      updateHealthBar(tgt);
+    });
+    updateHUD();
+    updateHealthHUD();
+  }
+
+  // ---------- Input ----------
+  document.getElementById('startBtn').addEventListener('click', () => {
+    ensureAudio();
+    if (Net && Net.connected) leaveNetwork();   // PLAY always means the local single-player game
+    if (gameMode !== 'single') { gameMode = 'single'; loadMap(currentMapId); }
+    exitMenuView();          // back to the normal first-person camera, gun, HUD and fog
+    reset(); started = true; // unchanged existing start behaviour — the world itself is untouched
+    overlayEl.style.display = 'none';
+    requestLock();
+  });
+  document.getElementById('hostBtn').addEventListener('click', () => { ensureAudio(); startHosting(); });
+  document.getElementById('joinBtn').addEventListener('click', () => {
+    ensureAudio();
+    const inp = document.getElementById('joinAddr');
+    if (!inp.value) inp.value = (Net && Net.pageAddress()) || '192.168.';
+    showJoinPanel();
+    setTimeout(() => { try { inp.focus(); inp.select(); } catch (e) {} }, 30);
+  });
+  document.getElementById('mapSelectBtn').addEventListener('click', showMapSelect);
+  document.getElementById('mapBackBtn').addEventListener('click', () => {
+    // Coming back from map selection returns to whichever screen sent us there.
+    if (Net && Net.connected) { if (Net.isHost) showHostPanel(); else showJoinPanel(); }
+    else showMenuRoot();
+  });
+  document.getElementById('hostStartBtn').addEventListener('click', () => {
+    if (Net && Net.connected && Net.isHost) {
+      setNetStatus('hostStatus', 'Starting match…', 'busy');
+      Net.startMatch();
+    }
+  });
+  document.getElementById('hostMapBtn').addEventListener('click', showMapSelect);
+  document.getElementById('hostSettingsBtn').addEventListener('click', showSettingsPanel);
+  document.getElementById('settingsBackBtn').addEventListener('click', () => {
+    if (Net && Net.connected) { if (Net.isHost) showHostPanel(); else showJoinPanel(); }
+    else showMenuRoot();
+  });
+  document.getElementById('matchResultContinueBtn').addEventListener('click', () => {
+    if (Net && Net.connected) { if (Net.isHost) showHostPanel(); else showJoinPanel(); }
+    else showMenuRoot();
+  });
+  document.getElementById('hostBackBtn').addEventListener('click', () => { leaveNetwork(); showMenuRoot(); });
+  document.getElementById('joinGoBtn').addEventListener('click', joinGame);
+  document.getElementById('joinBackBtn').addEventListener('click', () => { leaveNetwork(); showMenuRoot(); });
+  document.getElementById('joinAddr').addEventListener('keydown', e => {
+    if (e.code === 'Enter' || e.key === 'Enter') joinGame();
+  });
+  playerNameInputEl.addEventListener('change', savePlayerName);
+  playerNameInputEl.addEventListener('blur', savePlayerName);
+  document.getElementById('respawnBtn').addEventListener('click', () => {
+    if (Net && mp.dead && Date.now() >= mp.respawnAt) Net.requestRespawn();
+  });
+  document.getElementById('resumeBtn').addEventListener('click', resumeGame);
+  document.getElementById('restartBtn') && document.getElementById('restartBtn').addEventListener('click', () => { exitMenuView(); reset(); started = true; resumeGame(); });
+  document.getElementById('menuBtn').addEventListener('click', () => { leaveNetwork(); showStart(); });
+
+  document.addEventListener('keydown', e => {
+    keys[e.code] = true;
+    if (e.code === 'KeyR') reload();
+    if (e.code === 'Digit1') switchWeapon('rifle');
+    if (e.code === 'Digit2') switchWeapon('pistol');
+    if (e.code === 'Digit3') switchWeapon('sniper');
+    if (e.code === 'Digit4') switchWeapon('shotgun');
+    if (e.code === 'Escape') {
+      if (started && !gameOver) { if (paused) resumeGame(); else pauseGame(); }
+    }
+  });
+  document.addEventListener('keyup', e => { keys[e.code] = false; });
+
+  document.addEventListener('mousemove', e => {
+    mouseX = e.clientX; mouseY = e.clientY;
+    if (pointerLocked && started && !gameOver && !paused) {
+      const lookX = Number.isFinite(e.movementX) ? THREE.MathUtils.clamp(e.movementX, -MAX_LOOK_DELTA, MAX_LOOK_DELTA) : 0;
+      const lookY = Number.isFinite(e.movementY) ? THREE.MathUtils.clamp(e.movementY, -MAX_LOOK_DELTA, MAX_LOOK_DELTA) : 0;
+      yaw -= lookX * 0.0022;
+      pitch -= lookY * 0.0022;
+      pitch = THREE.MathUtils.clamp(pitch, -1.5, 1.5);
+    }
+  });
+
+  document.addEventListener('mousedown', e => {
+    if (!started || gameOver || paused) return;
+    if (e.button === 0 && pointerLocked) keys['Mouse0'] = true;
+    if (e.button === 2) aiming = true;
+  });
+  document.addEventListener('mouseup', e => {
+    if (e.button === 0) keys['Mouse0'] = false;
+    if (e.button === 2) aiming = false;
+  });
+  document.addEventListener('contextmenu', e => e.preventDefault());
+
+  document.addEventListener('pointerlockchange', () => {
+    pointerLocked = document.pointerLockElement === canvas;
+    if (!pointerLocked && started && !gameOver && !paused && !mp.dead) pauseGame();
+  });
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    if (menuView) applyAerialCamera();   // keep the whole map framed at the new aspect ratio
+  });
+
+  // Boot straight into the main menu, with the selected map live behind it.
+  enterMenuView();          // aerial first, so loadMap frames and seeds rain for the menu
+  loadMap('downtown');
+  buildMapList();
+  refreshMapUI();
+  buildModeList();
+  buildPillRow('scoreLimitRow', SCORE_LIMIT_OPTIONS, 'scoreLimit', fmtScore);
+  buildPillRow('timeLimitRow', TIME_LIMIT_OPTIONS, 'timeLimitMin', fmtTime);
+  buildPillRow('friendlyFireRow', [true, false], 'friendlyFire', fmtFF);
+  refreshSettingsUI();
+  playerNameInputEl.value = playerName();
+  updateNetPanels();
+  updatePauseNetInfo();
+  showStart();
+  updateHUD();
+  updateHealthHUD();
+  updateCrosshair(4);
+  animate();
+})();
+</script>
+</body>
+</html>
